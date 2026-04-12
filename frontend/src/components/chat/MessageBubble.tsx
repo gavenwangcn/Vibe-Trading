@@ -1,15 +1,36 @@
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useMemo } from "react";
 import { User, XCircle, RefreshCw, Copy, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { formatTimestamp } from "@/lib/formatters";
 import type { AgentMessage } from "@/types/agent";
+import { embedRunArtifactsInMarkdown } from "@/lib/embedRunArtifacts";
 import { AgentAvatar } from "./AgentAvatar";
 import { RunCompleteCard } from "./RunCompleteCard";
 
 const remarkPlugins = [remarkGfm];
 const rehypePlugins = [rehypeHighlight];
+
+/** Clickable download for `/runs/.../artifacts/...` links (same-origin). */
+const markdownComponents: Partial<Components> = {
+  a: ({ href, children, ...props }) => {
+    const h = typeof href === "string" ? href : "";
+    const isArtifact = /^\/runs\/[^/]+\/artifacts\/[^/]+$/.test(h);
+    const fname = isArtifact ? decodeURIComponent(h.split("/").pop() || "") : "";
+    return (
+      <a
+        {...props}
+        href={h}
+        className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary break-all"
+        download={isArtifact && fname ? fname : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+};
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -48,6 +69,10 @@ interface Props {
 
 export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props) {
   const ts = msg.timestamp ? formatTimestamp(msg.timestamp) : null;
+  const answerRenderedMd = useMemo(() => {
+    if (msg.type !== "answer") return "";
+    return embedRunArtifactsInMarkdown(msg.content, msg.runId);
+  }, [msg.type, msg.content, msg.runId]);
 
   if (msg.type === "user") {
     return (
@@ -69,8 +94,14 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
         <AgentAvatar />
         <div className="flex-1 min-w-0 relative">
           <CopyButton text={msg.content} />
-          <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed prose-table:border prose-table:border-border/50 prose-th:bg-muted/30 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5 prose-th:text-left prose-th:text-xs prose-th:font-medium prose-td:text-xs">
-            <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins}>{msg.content}</ReactMarkdown>
+          <div className="prose prose-sm dark:prose-invert max-w-none leading-relaxed prose-table:border prose-table:border-border/50 prose-th:bg-muted/30 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5 prose-th:text-left prose-th:text-xs prose-th:font-medium prose-td:text-xs prose-img:rounded-lg prose-img:border prose-img:border-border/50 prose-img:max-w-full prose-img:shadow-sm">
+            <ReactMarkdown
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={rehypePlugins}
+              components={markdownComponents}
+            >
+              {answerRenderedMd}
+            </ReactMarkdown>
           </div>
           {ts && <span className="text-[9px] text-muted-foreground/30 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">{ts}</span>}
         </div>

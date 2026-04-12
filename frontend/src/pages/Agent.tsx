@@ -137,7 +137,13 @@ export function Agent() {
         } else if (runId) {
           // Show text answer first (if non-empty), then chart card
           if (m.content && m.content !== "Strategy execution completed.") {
-            agentMsgs.push({ id: m.message_id + "_ans", type: "answer", content: m.content, timestamp: ts });
+            agentMsgs.push({
+              id: m.message_id + "_ans",
+              type: "answer",
+              content: m.content,
+              timestamp: ts,
+              runId,
+            });
           }
           agentMsgs.push({ id: m.message_id, type: "run_complete", content: "", runId, metrics, timestamp: ts + 1 });
         } else {
@@ -211,7 +217,15 @@ export function Agent() {
         const runDir = String(d.run_dir || "");
         const runId = runDir ? runDir.split(/[/\\]/).pop() : undefined;
         const summary = String(d.summary || "");
-        if (summary) s.addMessage({ id: "", type: "answer", content: summary, timestamp: Date.now() });
+        if (summary) {
+          s.addMessage({
+            id: "",
+            type: "answer",
+            content: summary,
+            timestamp: Date.now(),
+            runId: runId || undefined,
+          });
+        }
 
         // Only show RunCompleteCard if backtest produced metrics
         if (runId) {

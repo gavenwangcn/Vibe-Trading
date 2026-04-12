@@ -12,13 +12,14 @@ import os
 import signal
 import time
 import csv
+import mimetypes
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Security, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -409,6 +410,27 @@ async def get_run_code(run_id: str):
         if p.exists():
             result[f] = p.read_text(encoding="utf-8")
     return result
+
+
+@app.get("/runs/{run_id}/artifacts/{filename}")
+async def get_run_artifact_file(run_id: str, filename: str):
+    """Serve a binary/text file from ``runs/{run_id}/artifacts/`` (e.g. PNG charts).
+
+    Used by the chat UI to render ``artifacts/*.png`` paths as inline images.
+    """
+    safe = Path(filename).name
+    if safe != filename or not filename:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid artifact path")
+    art_root = (RUNS_DIR / run_id / "artifacts").resolve()
+    file_path = (art_root / safe).resolve()
+    try:
+        file_path.relative_to(art_root)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+    if not file_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Artifact not found")
+    media = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media, filename=safe)
 
 
 @app.get("/runs/{run_id}/pine")
