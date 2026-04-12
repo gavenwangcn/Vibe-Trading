@@ -162,9 +162,25 @@ export function Layout() {
                       </Link>
                     )}
                     {!isRenaming && isDeleting ? (
-                      <div className="absolute right-0.5 flex items-center gap-0.5">
-                        <button onClick={() => deleteSession(s.session_id)} className="p-1 text-danger hover:bg-danger/10 rounded text-[10px] font-medium">{t.confirmDelete}</button>
-                        <button onClick={() => setDeleteTarget(null)} className="p-1 text-muted-foreground hover:bg-muted rounded text-[10px]">{t.cancelDelete}</button>
+                      <div
+                        className="absolute inset-0 z-20 flex items-center justify-end gap-1 rounded-md border border-border bg-card/95 px-2 py-0.5 shadow-sm backdrop-blur-[2px]"
+                        role="group"
+                        aria-label={t.deleteConfirm}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => deleteSession(s.session_id)}
+                          className="shrink-0 rounded px-2 py-1 text-[11px] font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {t.confirmDelete}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget(null)}
+                          className="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          {t.cancelDelete}
+                        </button>
                       </div>
                     ) : !isRenaming ? (
                       <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
