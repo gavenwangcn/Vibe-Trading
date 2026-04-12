@@ -16,6 +16,7 @@ export default defineConfig({
       "/sessions": { target: "http://localhost:8899", changeOrigin: true },
       "/skills": { target: "http://localhost:8899", changeOrigin: true },
       "/swarm/presets": { target: "http://localhost:8899", changeOrigin: true },
+      "/swarm/zh-docs": { target: "http://localhost:8899", changeOrigin: true },
       "/swarm/runs": { target: "http://localhost:8899", changeOrigin: true },
       "/upload": { target: "http://localhost:8899", changeOrigin: true },
       "/api": { target: "http://localhost:8899", changeOrigin: true },

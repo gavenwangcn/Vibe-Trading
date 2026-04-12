@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import signal
 import time
 import csv
@@ -22,9 +23,11 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Req
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+import yaml
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
+from src.swarm.presets import PRESETS_DIR
 from src.ui_services import build_run_analysis, load_run_context
 
 # UTF-8 on Windows
@@ -866,6 +869,50 @@ async def upload_file(file: UploadFile):
 # Swarm API
 # ============================================================================
 
+def _stem_from_zh_md_path(path: Path) -> str:
+    name = path.name
+    if name.endswith(".zh.md"):
+        return name[: -len(".zh.md")]
+    return path.stem
+
+
+def _parse_swarm_zh_title(content: str) -> str:
+    """Prefer YAML `title` in the first ```yaml block; else first Markdown H1 (strip English stem in parens)."""
+    m = re.search(r"```yaml\s*\n(.*?)```", content, re.DOTALL)
+    if m:
+        try:
+            data = yaml.safe_load(m.group(1))
+            if isinstance(data, dict):
+                t = data.get("title")
+                if isinstance(t, str) and t.strip():
+                    return t.strip()
+        except Exception:
+            pass
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            rest = line[1:].strip()
+            mm = re.match(r"^(.+?)(?:[（(][a-z0-9_]+[）)])?\s*$", rest)
+            if mm:
+                return mm.group(1).strip()
+            return rest
+        break
+    return "Swarm"
+
+
+class SwarmZhDocInfo(BaseModel):
+    stem: str
+    title_zh: str
+
+
+class SwarmZhDocDetail(BaseModel):
+    stem: str
+    title_zh: str
+    content: str
+
+
 _swarm_runtime = None
 
 
@@ -887,6 +934,41 @@ async def list_swarm_presets():
     """List Swarm YAML presets."""
     from src.swarm.presets import list_presets
     return list_presets()
+
+
+@app.get("/swarm/zh-docs", response_model=List[SwarmZhDocInfo])
+async def list_swarm_zh_docs():
+    """List Chinese swarm workflow docs (*.zh.md): stem + display title."""
+    d = PRESETS_DIR
+    if not d.is_dir():
+        return []
+    out: List[SwarmZhDocInfo] = []
+    for p in sorted(d.glob("*.zh.md"), key=lambda x: x.name.lower()):
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        stem = _stem_from_zh_md_path(p)
+        title_zh = _parse_swarm_zh_title(text)
+        out.append(SwarmZhDocInfo(stem=stem, title_zh=title_zh))
+    out.sort(key=lambda x: x.title_zh)
+    return out
+
+
+@app.get("/swarm/zh-docs/{stem}", response_model=SwarmZhDocDetail)
+async def get_swarm_zh_doc(stem: str):
+    """Full markdown body of a swarm *.zh.md (for UI documentation modal)."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", stem):
+        raise HTTPException(status_code=400, detail="invalid stem")
+    p = PRESETS_DIR / f"{stem}.zh.md"
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="doc not found")
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    title_zh = _parse_swarm_zh_title(text)
+    return SwarmZhDocDetail(stem=stem, title_zh=title_zh, content=text)
 
 
 @app.post("/swarm/runs", dependencies=[Depends(require_auth)])

@@ -55,6 +55,9 @@ export const api = {
 
   // Swarm API
   listSwarmPresets: () => request<SwarmPreset[]>("/swarm/presets"),
+  listSwarmZhDocs: () => request<SwarmZhDocInfo[]>("/swarm/zh-docs"),
+  getSwarmZhDoc: (stem: string) =>
+    request<SwarmZhDocDetail>(`/swarm/zh-docs/${encodeURIComponent(stem)}`),
   createSwarmRun: (preset_name: string, user_vars: Record<string, string>) =>
     request<{ id: string; status: string }>("/swarm/runs", {
       method: "POST",
@@ -74,6 +77,17 @@ export interface SwarmPreset {
   description: string;
   agent_count: number;
   variables: { name: string; description: string; required: boolean }[];
+}
+
+export interface SwarmZhDocInfo {
+  stem: string;
+  title_zh: string;
+}
+
+export interface SwarmZhDocDetail {
+  stem: string;
+  title_zh: string;
+  content: string;
 }
 
 export interface SwarmRunSummary {

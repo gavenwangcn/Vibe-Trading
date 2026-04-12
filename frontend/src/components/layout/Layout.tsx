@@ -7,6 +7,7 @@ import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
+import { SwarmWorkflowPanel } from "@/components/layout/SwarmWorkflowPanel";
 
 const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
@@ -99,9 +100,11 @@ export function Layout() {
           ))}
         </nav>
 
-        {/* Sessions — hidden when collapsed */}
+        {/* Swarm workflow docs + Sessions — hidden when collapsed */}
         {!collapsed && (
-          <div className="flex-1 overflow-auto border-t mt-2 flex flex-col">
+          <>
+            <SwarmWorkflowPanel />
+            <div className="flex-1 overflow-auto flex flex-col min-h-0">
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <MessageSquare className="h-3.5 w-3.5" />
@@ -204,7 +207,8 @@ export function Layout() {
                 );
               })}
             </div>
-          </div>
+            </div>
+          </>
         )}
 
         {/* Spacer when collapsed */}

@@ -28,6 +28,7 @@ dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "scipy>=1.10.0",
+    "matplotlib>=3.7.0",
     "duckdb>=1.2.0",
     "scikit-learn>=1.3.0",
     "joblib>=1.3.0",
@@ -72,7 +73,7 @@ include = ["src*", "backtest*"]
 "backtest" = ["*.py"]
 
 [tool.setuptools.data-files]
-"config/swarm" = ["agent/config/swarm/*.yaml"]
+"config/swarm" = ["agent/config/swarm/*.yaml", "agent/config/swarm/*.zh.md"]
 
 [project.optional-dependencies]
 dev = [
