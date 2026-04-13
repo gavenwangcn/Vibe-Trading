@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Trash2,
   FlaskConical,
+  X,
 } from "lucide-react";
 import {
   api,
@@ -61,6 +62,14 @@ export function McpSettings() {
   const [showAllToolsFor, setShowAllToolsFor] = useState<Record<string, boolean>>({});
   /** Test request threw (e.g. network) before server state updated — show red until retested. */
   const [probeNetworkFailById, setProbeNetworkFailById] = useState<Record<string, boolean>>({});
+  const [jsonModal, setJsonModal] = useState<{
+    serverId: string;
+    text: string;
+    loading: boolean;
+    loadError: string | null;
+    saveError: string | null;
+  } | null>(null);
+  const [savingJson, setSavingJson] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -74,6 +83,71 @@ export function McpSettings() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!jsonModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setJsonModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [jsonModal]);
+
+  const openJsonModal = (serverId: string) => {
+    setJsonModal({ serverId, text: "", loading: true, loadError: null, saveError: null });
+    api
+      .getMcpServerRaw(serverId)
+      .then((raw) => {
+        setJsonModal((m) =>
+          m?.serverId === serverId
+            ? { ...m, text: JSON.stringify(raw, null, 2), loading: false, loadError: null }
+            : m
+        );
+      })
+      .catch((e) => {
+        setJsonModal((m) =>
+          m?.serverId === serverId
+            ? { ...m, text: "", loading: false, loadError: String(e) }
+            : m
+        );
+      });
+  };
+
+  const saveJsonFromModal = async () => {
+    if (!jsonModal) return;
+    const { serverId, text } = jsonModal;
+    setJsonModal((m) => (m ? { ...m, saveError: null } : m));
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      setJsonModal((m) => (m ? { ...m, saveError: t.mcpJsonInvalid } : m));
+      return;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      setJsonModal((m) => (m ? { ...m, saveError: t.mcpJsonInvalid } : m));
+      return;
+    }
+    setSavingJson(true);
+    try {
+      await api.putMcpServerRaw(serverId, parsed);
+      setJsonModal(null);
+      setServerTools((prev) => {
+        const next = { ...prev };
+        delete next[serverId];
+        return next;
+      });
+      setMsg(t.mcpJsonSaved);
+      await load();
+      if (expandedServerId === serverId) {
+        await loadToolsFor(serverId, false);
+      }
+    } catch (e) {
+      setJsonModal((m) => (m ? { ...m, saveError: String(e) } : m));
+    } finally {
+      setSavingJson(false);
+    }
+  };
 
   const saveNew = async () => {
     if (!form.id.trim()) {
@@ -428,9 +502,14 @@ export function McpSettings() {
                     >
                       {s.id}
                     </button>
-                    <span className="text-xs text-muted-foreground truncate max-w-[220px] min-w-0">
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline truncate min-w-0 max-w-[min(100%,280px)] text-left"
+                      title={t.mcpEditJsonHint}
+                      onClick={() => openJsonModal(s.id)}
+                    >
                       {cmdLine}
-                    </span>
+                    </button>
                     <span className="text-xs text-muted-foreground">
                       {s.tool_count != null ? `${s.tool_count} tools` : "—"}
                     </span>
@@ -548,6 +627,78 @@ export function McpSettings() {
           </ul>
         )}
       </section>
+
+      {jsonModal && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mcp-json-modal-title"
+          onClick={() => setJsonModal(null)}
+        >
+          <div
+            className="relative flex max-h-[min(92vh,900px)] w-full max-w-2xl flex-col rounded-lg border border-border bg-card shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3 shrink-0">
+              <div className="min-w-0 pr-6">
+                <h2 id="mcp-json-modal-title" className="text-sm font-semibold">
+                  {t.mcpEditJsonTitle}
+                </h2>
+                <p className="text-xs font-mono text-muted-foreground mt-0.5 truncate">{jsonModal.serverId}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setJsonModal(null)}
+                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                title={t.mcpJsonCancel}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground px-4 pt-2">{t.mcpEditJsonHint}</p>
+            <div className="min-h-0 flex-1 overflow-hidden flex flex-col px-4 py-3 gap-2">
+              {jsonModal.loading ? (
+                <p className="text-sm text-muted-foreground flex items-center gap-2 py-8 justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin" /> {t.loading}
+                </p>
+              ) : jsonModal.loadError ? (
+                <p className="text-sm text-destructive">{jsonModal.loadError}</p>
+              ) : (
+                <textarea
+                  className="w-full min-h-[min(60vh,420px)] flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs font-mono resize-y"
+                  value={jsonModal.text}
+                  onChange={(e) =>
+                    setJsonModal((m) => (m ? { ...m, text: e.target.value, saveError: null } : m))
+                  }
+                  spellCheck={false}
+                />
+              )}
+              {jsonModal.saveError && (
+                <p className="text-xs text-destructive">{jsonModal.saveError}</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-border px-4 py-3 shrink-0">
+              <button
+                type="button"
+                className="text-sm rounded-md border border-border px-3 py-1.5 hover:bg-muted"
+                onClick={() => setJsonModal(null)}
+              >
+                {t.mcpJsonCancel}
+              </button>
+              <button
+                type="button"
+                disabled={savingJson || jsonModal.loading || !!jsonModal.loadError}
+                onClick={() => void saveJsonFromModal()}
+                className="text-sm rounded-md bg-primary text-primary-foreground px-3 py-1.5 font-medium disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {savingJson ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {t.mcpJsonSave}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

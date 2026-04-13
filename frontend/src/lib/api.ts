@@ -77,6 +77,13 @@ export const api = {
     }),
   deleteMcpServer: (id: string) =>
     request<{ status: string }>(`/system/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  getMcpServerRaw: (id: string) =>
+    request<Record<string, unknown>>(`/system/mcp/servers/${encodeURIComponent(id)}/raw`),
+  putMcpServerRaw: (id: string, body: Record<string, unknown>) =>
+    request<McpServer>(`/system/mcp/servers/${encodeURIComponent(id)}/raw`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
   testMcpServer: (id: string) =>
     request<McpTestResult>(`/system/mcp/servers/${encodeURIComponent(id)}/test`, { method: "POST" }),
   getMcpServerTools: (id: string, refresh?: boolean) =>

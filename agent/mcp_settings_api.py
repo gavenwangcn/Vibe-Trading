@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from src.mcp_integration import runtime, store
@@ -100,6 +100,32 @@ async def delete_mcp_server(server_id: str) -> Dict[str, str]:
     if not store.delete_server(server_id):
         raise HTTPException(status_code=404, detail="Server not found")
     return {"status": "ok"}
+
+
+@router.get("/servers/{server_id}/raw")
+async def get_server_raw(server_id: str) -> Dict[str, Any]:
+    """Full stored config for one server (includes ``_cached_tools``, ``_last_error``, etc.)."""
+    servers = store.get_servers()
+    cfg = servers.get(server_id)
+    if not isinstance(cfg, dict):
+        raise HTTPException(status_code=404, detail="Server not found")
+    out: Dict[str, Any] = dict(cfg)
+    out["id"] = server_id
+    return out
+
+
+@router.put("/servers/{server_id}/raw", response_model=McpServerPublic)
+async def put_server_raw(server_id: str, body: Dict[str, Any] = Body(...)) -> McpServerPublic:
+    """Replace server entry with edited JSON. ``id`` in body must match the path if present."""
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+    bid = body.get("id")
+    if bid is not None and str(bid) != server_id:
+        raise HTTPException(status_code=400, detail="id in JSON must match URL server_id")
+    cfg = dict(body)
+    cfg.pop("id", None)
+    store.set_server(server_id, cfg)
+    return _to_public(server_id, store.get_servers()[server_id])
 
 
 @router.get("/servers/{server_id}/tools")
