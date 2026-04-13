@@ -75,13 +75,15 @@ def delete_server(server_id: str) -> bool:
 
 
 def normalize_server_entry(entry: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-    """Normalize user/Cursor payload to internal shape. Returns (id, cfg)."""
+    """Normalize user/Cursor payload to internal shape. Returns (id, cfg).
+
+    Supports:
+    - **stdio**: ``command`` (+ optional ``args``, ``env``) — local subprocess.
+    - **SSE**: ``url`` only (or ``transport: sse``) — remote HTTP SSE endpoint (e.g. ``.../sse``).
+    """
     sid = str(entry.get("id") or entry.get("name") or "").strip()
     if not sid:
         raise ValueError("server id is required")
-    command = str(entry.get("command") or "").strip()
-    if not command:
-        raise ValueError("command is required for stdio transport")
     args = entry.get("args")
     if args is None:
         args = []
@@ -97,17 +99,45 @@ def normalize_server_entry(entry: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
         env = {}
     env_out = {str(k): str(v) for k, v in env.items()}
     enabled = bool(entry.get("enabled", True))
-    transport = str(entry.get("transport") or "stdio").lower()
-    if transport not in ("stdio", "sse"):
-        transport = "stdio"
-    url = entry.get("url")
-    if url is not None:
-        url = str(url).strip() or None
-    return sid, {
+    url_raw = entry.get("url")
+    url = str(url_raw).strip() if url_raw not in (None, "") else None
+    command = str(entry.get("command") or "").strip()
+    transport_in = str(entry.get("transport") or "").lower().strip()
+
+    # SSE: URL-only configs (Cursor / Claude Desktop style: only "url")
+    if url and not command:
+        return sid, {
+            "command": "",
+            "args": [],
+            "env": env_out,
+            "enabled": enabled,
+            "transport": "sse",
+            "url": url,
+        }
+
+    if not command:
+        raise ValueError("provide command (stdio) or url (SSE), not neither")
+
+    transport = transport_in if transport_in in ("stdio", "sse") else "stdio"
+    if transport == "sse":
+        if not url:
+            raise ValueError("transport sse requires url")
+        return sid, {
+            "command": command,
+            "args": args,
+            "env": env_out,
+            "enabled": enabled,
+            "transport": "sse",
+            "url": url,
+        }
+
+    out: Dict[str, Any] = {
         "command": command,
         "args": args,
         "env": env_out,
         "enabled": enabled,
-        "transport": transport,
-        **({"url": url} if url else {}),
+        "transport": "stdio",
     }
+    if url:
+        out["url"] = url
+    return sid, out

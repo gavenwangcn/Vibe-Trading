@@ -1,4 +1,4 @@
-"""MCP stdio client: list tools and invoke tools (async)."""
+"""MCP client: stdio and SSE transports — list tools and invoke tools (async)."""
 
 from __future__ import annotations
 
@@ -27,6 +27,17 @@ def _params_from_cfg(cfg: Dict[str, Any]) -> StdioServerParameters:
         env = {}
     env_s = {str(k): str(v) for k, v in env.items()}
     return StdioServerParameters(command=cmd, args=args, env=env_s if env_s else None)
+
+
+def _effective_transport(cfg: Dict[str, Any]) -> str:
+    url = str(cfg.get("url") or "").strip()
+    cmd = str(cfg.get("command") or "").strip()
+    t = str(cfg.get("transport") or "").lower().strip()
+    if t == "sse":
+        return "sse"
+    if url and not cmd:
+        return "sse"
+    return "stdio"
 
 
 def _serialize_tool_list(tools_result) -> List[Dict[str, Any]]:
@@ -69,11 +80,25 @@ def _serialize_call_result(result: CallToolResult) -> Dict[str, Any]:
     return payload
 
 
-async def _with_stdio_session(cfg: Dict[str, Any], fn: Callable[[ClientSession], Any]) -> Any:
-    transport = str(cfg.get("transport") or "stdio").lower()
-    if transport != "stdio":
-        raise RuntimeError(f"transport '{transport}' is not supported yet (only stdio)")
+async def _with_mcp_session(cfg: Dict[str, Any], fn: Callable[[ClientSession], Any]) -> Any:
+    transport = _effective_transport(cfg)
+    if transport == "sse":
+        from mcp.client.sse import sse_client
+
+        url = str(cfg.get("url") or "").strip()
+        if not url:
+            raise RuntimeError("SSE transport requires url")
+        headers = cfg.get("headers")
+        hdr = headers if isinstance(headers, dict) else None
+        async with sse_client(url, headers=hdr) as streams:
+            read_s, write_s = streams
+            async with ClientSession(read_s, write_s) as session:
+                await session.initialize()
+                return await fn(session)
+
     params = _params_from_cfg(cfg)
+    if not params.command:
+        raise RuntimeError("stdio transport requires non-empty command")
     async with stdio_client(params) as streams:
         read_s, write_s = streams
         async with ClientSession(read_s, write_s) as session:
@@ -86,7 +111,7 @@ async def list_tools_async(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         res = await asyncio.wait_for(session.list_tools(), timeout=LIST_TIMEOUT)
         return _serialize_tool_list(res)
 
-    return await _with_stdio_session(cfg, _inner)
+    return await _with_mcp_session(cfg, _inner)
 
 
 async def call_tool_async(cfg: Dict[str, Any], tool_name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -97,7 +122,7 @@ async def call_tool_async(cfg: Dict[str, Any], tool_name: str, arguments: Option
         )
         return _serialize_call_result(res)
 
-    return await _with_stdio_session(cfg, _inner)
+    return await _with_mcp_session(cfg, _inner)
 
 
 def run_coro(coro):
@@ -106,7 +131,6 @@ def run_coro(coro):
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    # Nested loop: new loop in worker thread is avoided — Agent runs in executor without loop
     return asyncio.run(coro)
 
 

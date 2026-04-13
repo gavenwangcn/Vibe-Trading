@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator
 
 from src.mcp_integration import runtime, store
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -29,13 +32,20 @@ class McpServerPublic(BaseModel):
 
 
 class McpServerUpsert(BaseModel):
+    """stdio needs command; SSE needs url (command may be empty)."""
+
     id: str = Field(..., min_length=1, max_length=128)
-    command: str = Field(..., min_length=1)
+    command: str = ""
     args: List[str] = Field(default_factory=list)
     env: Dict[str, str] = Field(default_factory=dict)
     enabled: bool = True
     transport: str = "stdio"
     url: Optional[str] = None
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def empty_str(cls, v: Any) -> str:
+        return "" if v is None else str(v)
 
 
 def _to_public(sid: str, cfg: Dict[str, Any]) -> McpServerPublic:
@@ -92,14 +102,65 @@ async def delete_mcp_server(server_id: str) -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@router.get("/servers/{server_id}/tools")
+async def get_server_tools(
+    server_id: str,
+    refresh: bool = Query(False, description="If true, run list_tools live and update cache"),
+) -> Dict[str, Any]:
+    """Return tool definitions for one MCP server (from cache or live)."""
+    servers = store.get_servers()
+    cfg = servers.get(server_id)
+    if not isinstance(cfg, dict):
+        raise HTTPException(status_code=404, detail="Server not found")
+    source = "cache"
+    tools: List[Dict[str, Any]] = []
+    err: Optional[str] = None
+    if refresh:
+        ok, live_tools, err = runtime.list_tools_sync(cfg)
+        source = "live"
+        cfg = dict(cfg)
+        if ok:
+            cfg["_cached_tools"] = live_tools
+            cfg["_last_error"] = None
+            cfg["_last_ok_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            cfg["_last_error"] = err
+        store.set_server(server_id, cfg)
+        tools = live_tools if ok else []
+    else:
+        cached = cfg.get("_cached_tools")
+        if isinstance(cached, list):
+            tools = [t for t in cached if isinstance(t, dict)]
+        else:
+            tools = []
+    # Normalize for JSON (inputSchema may be nested dicts)
+    out: List[Dict[str, Any]] = []
+    for t in tools:
+        item: Dict[str, Any] = {"name": t.get("name", "")}
+        if t.get("description"):
+            item["description"] = t["description"]
+        if t.get("inputSchema") is not None:
+            sch = t["inputSchema"]
+            if hasattr(sch, "model_dump"):
+                item["inputSchema"] = sch.model_dump()
+            else:
+                item["inputSchema"] = sch
+        out.append(item)
+    return {
+        "server_id": server_id,
+        "tools": out,
+        "tool_count": len(out),
+        "source": source,
+        "error": err,
+    }
+
+
 @router.post("/servers/{server_id}/test")
 async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     servers = store.get_servers()
     cfg = servers.get(server_id)
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=404, detail="Server not found")
-    if str(cfg.get("transport") or "stdio") != "stdio":
-        raise HTTPException(status_code=400, detail="Only stdio servers can be tested in this build")
     ok, tools, err = runtime.list_tools_sync(cfg)
     cfg = dict(cfg)
     if ok:
@@ -135,15 +196,21 @@ async def import_mcp_json(body: ImportBody) -> Dict[str, Any]:
     if not isinstance(incoming, dict):
         raise HTTPException(status_code=400, detail="Invalid JSON shape")
     count = 0
+    skipped: List[Dict[str, str]] = []
     for sid, entry in incoming.items():
         if not isinstance(entry, dict):
+            skipped.append({"id": str(sid), "reason": "not an object"})
+            logger.warning("MCP import skip %s: entry is not a dict", sid)
             continue
         merged = dict(entry)
         merged["id"] = str(sid)
         try:
             _, cfg = store.normalize_server_entry(merged)
-        except ValueError:
+        except ValueError as exc:
+            skipped.append({"id": str(sid), "reason": str(exc)})
+            logger.warning("MCP import skip %s: %s", sid, exc)
             continue
         store.set_server(str(sid), cfg)
         count += 1
-    return {"status": "ok", "imported": count}
+        logger.info("MCP import saved server %s transport=%s", sid, cfg.get("transport"))
+    return {"status": "ok", "imported": count, "skipped": skipped}

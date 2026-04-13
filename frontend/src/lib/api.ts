@@ -79,8 +79,12 @@ export const api = {
     request<{ status: string }>(`/system/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
   testMcpServer: (id: string) =>
     request<McpTestResult>(`/system/mcp/servers/${encodeURIComponent(id)}/test`, { method: "POST" }),
+  getMcpServerTools: (id: string, refresh?: boolean) =>
+    request<McpToolsResponse>(
+      `/system/mcp/servers/${encodeURIComponent(id)}/tools${refresh ? "?refresh=true" : ""}`
+    ),
   importMcpJson: (raw: Record<string, unknown>) =>
-    request<{ status: string; imported: number }>("/system/mcp/import", {
+    request<McpImportResult>("/system/mcp/import", {
       method: "POST",
       body: JSON.stringify({ raw }),
     }),
@@ -103,7 +107,8 @@ export interface McpServer {
 
 export interface McpServerUpsert {
   id: string;
-  command: string;
+  /** Required for stdio; omit or empty for SSE when ``url`` is set. */
+  command?: string;
   args: string[];
   env: Record<string, string>;
   enabled: boolean;
@@ -111,11 +116,31 @@ export interface McpServerUpsert {
   url?: string | null;
 }
 
+export interface McpImportResult {
+  status: string;
+  imported: number;
+  skipped?: Array<{ id: string; reason: string }>;
+}
+
 export interface McpTestResult {
   ok: boolean;
   server_id: string;
   tool_count: number;
   tools: Array<Record<string, unknown>>;
+  error?: string | null;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface McpToolsResponse {
+  server_id: string;
+  tools: McpToolInfo[];
+  tool_count: number;
+  source: "cache" | "live";
   error?: string | null;
 }
 
