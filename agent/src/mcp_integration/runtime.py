@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
+import concurrent.futures
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -125,13 +127,38 @@ async def call_tool_async(cfg: Dict[str, Any], tool_name: str, arguments: Option
     return await _with_mcp_session(cfg, _inner)
 
 
+_mcp_bridge_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _mcp_bridge_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _mcp_bridge_pool
+    if _mcp_bridge_pool is None:
+        _mcp_bridge_pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=8,
+            thread_name_prefix="mcp_asyncio_bridge",
+        )
+
+        def _shutdown() -> None:
+            if _mcp_bridge_pool is not None:
+                _mcp_bridge_pool.shutdown(wait=False, cancel_futures=True)
+
+        atexit.register(_shutdown)
+    return _mcp_bridge_pool
+
+
 def run_coro(coro):
-    """Run async coroutine from sync context (Agent tool thread)."""
+    """Run async coroutine from sync code.
+
+    Uses ``asyncio.run`` when no loop is running (CLI, worker threads). When a loop is already
+    running (e.g. FastAPI request handler calling sync MCP helpers), runs the coroutine in a
+    dedicated thread with its own loop — ``asyncio.run()`` cannot nest on the same thread.
+    """
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    return asyncio.run(coro)
+    fut = _mcp_bridge_executor().submit(asyncio.run, coro)
+    return fut.result()
 
 
 def list_tools_sync(cfg: Dict[str, Any]) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:

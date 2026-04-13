@@ -33,6 +33,18 @@ const emptyForm: McpServerUpsert = {
 
 const TOOL_CHIP_PREVIEW = 20;
 
+/** Derived from API: last_error ⇒ fail; successful cache ⇒ ok (including 0 tools); else unknown. */
+function mcpConnectionHealth(
+  s: McpServer,
+  probeNetworkFail?: boolean
+): "ok" | "bad" | "unknown" {
+  const err = (s.last_error || "").trim();
+  if (err) return "bad";
+  if (s.tool_count != null) return "ok";
+  if (probeNetworkFail) return "bad";
+  return "unknown";
+}
+
 export function McpSettings() {
   const { t } = useI18n();
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -47,6 +59,8 @@ export function McpSettings() {
   const [loadingToolsId, setLoadingToolsId] = useState<string | null>(null);
   const [toolsErrById, setToolsErrById] = useState<Record<string, string | null>>({});
   const [showAllToolsFor, setShowAllToolsFor] = useState<Record<string, boolean>>({});
+  /** Test request threw (e.g. network) before server state updated — show red until retested. */
+  const [probeNetworkFailById, setProbeNetworkFailById] = useState<Record<string, boolean>>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -166,6 +180,7 @@ export function McpSettings() {
   const test = async (id: string) => {
     setTesting(id);
     setMsg(null);
+    setProbeNetworkFailById((prev) => ({ ...prev, [id]: false }));
     try {
       const r = await api.testMcpServer(id);
       setMsg(
@@ -178,12 +193,13 @@ export function McpSettings() {
         delete next[id];
         return next;
       });
-      load();
+      await load();
       if (expandedServerId === id) {
         await loadToolsFor(id, false);
       }
     } catch (e) {
       setMsg(String(e));
+      setProbeNetworkFailById((prev) => ({ ...prev, [id]: true }));
     } finally {
       setTesting(null);
     }
@@ -365,6 +381,13 @@ export function McpSettings() {
               const cmdLine = isSse
                 ? s.url || "(no URL)"
                 : [s.command, ...s.args].filter(Boolean).join(" ");
+              const health = mcpConnectionHealth(s, probeNetworkFailById[s.id]);
+              const statusTitle =
+                health === "ok"
+                  ? t.mcpStatusOk
+                  : health === "bad"
+                    ? t.mcpStatusFail
+                    : t.mcpStatusUnknown;
               const expanded = expandedServerId === s.id;
               const tools = serverTools[s.id] ?? [];
               const showAll = showAllToolsFor[s.id];
@@ -390,13 +413,12 @@ export function McpSettings() {
                       )}
                     </button>
                     <span
+                      title={statusTitle}
                       className={cn(
-                        "h-2 w-2 rounded-full shrink-0",
-                        s.last_error
-                          ? "bg-amber-500"
-                          : s.tool_count != null && s.tool_count > 0
-                            ? "bg-emerald-500"
-                            : "bg-muted-foreground/40"
+                        "h-2 w-2 rounded-full shrink-0 ring-2 ring-offset-2 ring-offset-card",
+                        health === "ok" && "bg-emerald-500 ring-emerald-500/30",
+                        health === "bad" && "bg-red-500 ring-red-500/30",
+                        health === "unknown" && "bg-muted-foreground/45 ring-transparent"
                       )}
                     />
                     <button
@@ -425,7 +447,18 @@ export function McpSettings() {
                     </label>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                      title={statusTitle}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50 transition-colors",
+                        testing === s.id && "border-border",
+                        testing !== s.id &&
+                          health === "ok" &&
+                          "border-emerald-500/70 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15",
+                        testing !== s.id &&
+                          health === "bad" &&
+                          "border-red-500/70 bg-red-500/10 text-red-700 dark:text-red-400 hover:bg-red-500/15",
+                        testing !== s.id && health === "unknown" && "border-border"
+                      )}
                       disabled={testing === s.id}
                       onClick={() => test(s.id)}
                     >
