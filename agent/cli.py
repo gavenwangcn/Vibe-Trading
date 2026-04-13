@@ -227,7 +227,7 @@ def _run_agent(
     stream_output: bool = True,
 ) -> dict:
     """Build AgentLoop and execute, return result dict."""
-    from src.tools import build_registry
+    from src.tools import build_registry_for_agent
     from src.providers.chat import ChatLLM
     from src.agent.loop import AgentLoop
 
@@ -284,7 +284,7 @@ def _run_agent(
             console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
 
     agent = AgentLoop(
-        registry=build_registry(),
+        registry=build_registry_for_agent(),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,

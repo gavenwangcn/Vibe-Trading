@@ -67,7 +67,57 @@ export const api = {
   getSwarmRun: (id: string) => request<Record<string, unknown>>(`/swarm/runs/${id}`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
+
+  // MCP servers (Cursor-compatible config)
+  listMcpServers: () => request<McpServer[]>("/system/mcp/servers"),
+  upsertMcpServer: (id: string, body: McpServerUpsert) =>
+    request<McpServer>(`/system/mcp/servers/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteMcpServer: (id: string) =>
+    request<{ status: string }>(`/system/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testMcpServer: (id: string) =>
+    request<McpTestResult>(`/system/mcp/servers/${encodeURIComponent(id)}/test`, { method: "POST" }),
+  importMcpJson: (raw: Record<string, unknown>) =>
+    request<{ status: string; imported: number }>("/system/mcp/import", {
+      method: "POST",
+      body: JSON.stringify({ raw }),
+    }),
 };
+
+// --- MCP types ---
+
+export interface McpServer {
+  id: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+  transport: string;
+  url?: string | null;
+  last_error?: string | null;
+  tool_count?: number | null;
+  tool_names?: string[] | null;
+}
+
+export interface McpServerUpsert {
+  id: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+  transport?: string;
+  url?: string | null;
+}
+
+export interface McpTestResult {
+  ok: boolean;
+  server_id: string;
+  tool_count: number;
+  tools: Array<Record<string, unknown>>;
+  error?: string | null;
+}
 
 // --- Swarm types ---
 

@@ -4,10 +4,13 @@ from src.agent.tools import ToolRegistry
 
 
 def build_registry() -> ToolRegistry:
-    """Build the v7 tool registry (atomic tools + domain tools).
+    """Build static tool registry (built-in tools only — no MCP plugin).
+
+    Used by standalone ``mcp_server`` (Vibe MCP) and lightweight subagents where
+    dynamic MCP discovery is not desired.
 
     Returns:
-        ToolRegistry containing all v7 tools.
+        ToolRegistry containing built-in tools only.
     """
     from src.tools.bash_tool import BashTool
     from src.tools.read_file_tool import ReadFileTool
@@ -38,25 +41,52 @@ def build_registry() -> ToolRegistry:
     return registry
 
 
-def build_filtered_registry(tool_names: list[str]) -> ToolRegistry:
-    """Build a ToolRegistry with only specified tools.
+def build_registry_for_agent() -> ToolRegistry:
+    """Build registry for the main web Agent: built-in tools plus MCP dynamic tools.
 
-    Creates the full registry, then filters to include only tools
-    whose names appear in the provided list. Unknown names are silently skipped.
-
-    Args:
-        tool_names: Tool names to include in the filtered registry.
+    On each call, reconnects to enabled MCP servers (or uses cached ``list_tools`` from the
+    settings UI test) and registers each remote tool as a first-class function for the LLM
+    (same ``tools`` array as native tools).
 
     Returns:
-        ToolRegistry containing only the requested tools.
+        ToolRegistry with static + MCP tools.
     """
-    full = build_registry()
+    from src.tools.mcp_tools import register_mcp_tools
+
+    registry = build_registry()
+    register_mcp_tools(registry)
+    return registry
+
+
+def build_filtered_registry(tool_names: list[str]) -> ToolRegistry:
+    """Build a filtered registry from the agent pool.
+
+    If the literal name ``mcp`` appears in ``tool_names``, the pool includes dynamically
+    discovered MCP tools (``build_registry_for_agent``). Otherwise only built-in tools are
+    loaded (faster; no MCP subprocesses).
+
+    When MCP is included, all tools whose function names start with ``mcp_`` are kept if
+    ``mcp`` is in ``tool_names``, in addition to exact name matches.
+
+    Args:
+        tool_names: Tool names to include.
+
+    Returns:
+        Filtered ToolRegistry.
+    """
+    names = set(tool_names or [])
+    include_mcp = "mcp" in names
+    full = build_registry_for_agent() if include_mcp else build_registry()
     filtered = ToolRegistry()
-    for name in tool_names:
-        tool = full.get(name)
-        if tool:
+    for tname in full.tool_names:
+        tool = full.get(tname)
+        if not tool:
+            continue
+        if tname in names:
+            filtered.register(tool)
+        elif include_mcp and tname.startswith("mcp_"):
             filtered.register(tool)
     return filtered
 
 
-__all__ = ["build_registry", "build_filtered_registry"]
+__all__ = ["build_registry", "build_registry_for_agent", "build_filtered_registry"]

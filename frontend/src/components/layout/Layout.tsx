@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, PlugZap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -104,6 +104,21 @@ export function Layout() {
         {!collapsed && (
           <>
             <SwarmWorkflowPanel />
+            <div className="mx-3 my-2 border-t border-border/60" role="separator" />
+            <div className="px-3 pb-2">
+              <Link
+                to="/mcp"
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
+                  pathname.startsWith("/mcp")
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <PlugZap className="h-3.5 w-3.5 shrink-0" />
+                {t.mcpNav}
+              </Link>
+            </div>
             <div className="flex-1 overflow-auto flex flex-col min-h-0">
             <div className="flex items-center justify-between px-4 py-2">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

@@ -4,6 +4,7 @@ import { Home } from "@/pages/Home";
 import { Agent } from "@/pages/Agent";
 import { RunDetail } from "@/pages/RunDetail";
 import { Compare } from "@/pages/Compare";
+import { McpSettings } from "@/pages/McpSettings";
 
 export const router = createBrowserRouter([
   {
@@ -13,6 +14,7 @@ export const router = createBrowserRouter([
       { path: "/agent", element: <Agent /> },
       { path: "/runs/:runId", element: <RunDetail /> },
       { path: "/compare", element: <Compare /> },
+      { path: "/mcp", element: <McpSettings /> },
     ],
   },
 ]);

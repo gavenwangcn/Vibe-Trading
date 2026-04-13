@@ -222,11 +222,11 @@ class SessionService:
         Returns:
             Result dictionary containing status, run_dir, run_id, metrics, and related fields.
         """
-        from src.tools import build_registry
+        from src.tools import build_registry_for_agent
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
 
-        registry = build_registry()
+        registry = build_registry_for_agent()
         llm = ChatLLM()
 
         session_id = attempt.session_id

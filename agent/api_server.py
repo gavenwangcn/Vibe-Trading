@@ -31,6 +31,8 @@ from src.agent.trace import TraceWriter
 from src.swarm.presets import PRESETS_DIR
 from src.ui_services import build_run_analysis, load_run_context
 
+from mcp_settings_api import router as mcp_settings_router
+
 # UTF-8 on Windows
 import sys as _sys
 for _s in ("stdout", "stderr"):
@@ -187,6 +189,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+app.include_router(mcp_settings_router, prefix="/system/mcp", tags=["mcp"])
 
 # CORS: override with CORS_ORIGINS (comma-separated)
 _CORS_ORIGINS = os.getenv(
