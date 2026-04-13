@@ -37,6 +37,7 @@ const messages = {
   review: "Review",
   noReview: "No review data available.",
   colTime: "Time", colCode: "Code", colSide: "Side",
+  traceColSpan: "#", traceColType: "Type", traceColIter: "Iter", traceColTool: "Tool", traceColDetails: "Details",
   colPrice: "Price", colQty: "Qty", colReason: "Reason",
   equityDrawdown: "Equity & Drawdown",
   noPriceData: "No price data", noEquityData: "No equity data",

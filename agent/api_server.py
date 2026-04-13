@@ -27,6 +27,7 @@ import yaml
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
 
+from src.agent.trace import TraceWriter
 from src.swarm.presets import PRESETS_DIR
 from src.ui_services import build_run_analysis, load_run_context
 
@@ -127,6 +128,10 @@ class RunResponse(BaseModel):
     )
     trade_markers: Optional[List[Dict[str, Any]]] = Field(None, description="Trade markers for charts")
     run_logs: Optional[List[Dict[str, Any]]] = Field(None, description="Structured stdout/stderr lines")
+    agent_trace: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description="ReAct agent trace spans from trace.jsonl (sorted by ts ascending)",
+    )
 
 
 class HealthResponse(BaseModel):
@@ -386,6 +391,14 @@ def _build_response_from_run_dir(run_dir: Path, elapsed: float, *, include_analy
         response.indicator_series = analysis.get("indicator_series")
         response.trade_markers = analysis.get("trade_markers")
         response.run_logs = analysis.get("run_logs")
+
+    # Agent loop trace (trace.jsonl): one JSON object per line, crash-safe writer
+    try:
+        raw_trace = TraceWriter.read(run_dir)
+        raw_trace.sort(key=lambda e: float(e.get("ts", 0) or 0))
+        response.agent_trace = raw_trace[:4000]
+    except Exception:
+        response.agent_trace = None
 
     return response
 

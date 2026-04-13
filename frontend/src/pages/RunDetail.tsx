@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, XCircle, BarChart3, List, Code2, ArrowLeft, Download, ShieldCheck } from "lucide-react";
+import { CheckCircle2, XCircle, BarChart3, List, Code2, ArrowLeft, Download, ShieldCheck, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { api, type RunData, type BacktestMetrics } from "@/lib/api";
@@ -15,7 +15,7 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 const rehypePlugins = [rehypeHighlight];
 
-type Tab = "chart" | "trades" | "code" | "validation";
+type Tab = "trace" | "chart" | "trades" | "code" | "validation";
 
 function downloadCsv(filename: string, csvContent: string) {
   const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -55,11 +55,12 @@ export function RunDetail() {
   const navigate = useNavigate();
   const [run, setRun] = useState<RunData | null>(null);
   const [code, setCode] = useState<Record<string, string>>({});
-  const [tab, setTab] = useState<Tab>("chart");
+  const [tab, setTab] = useState<Tab>("trace");
   const [loading, setLoading] = useState(true);
 
   const hasValidation = !!run?.validation;
   const TABS: { id: Tab; label: string; icon: typeof BarChart3; hidden?: boolean }[] = [
+    { id: "trace", label: t.trace, icon: Route },
     { id: "chart", label: t.chart, icon: BarChart3 },
     { id: "trades", label: t.trades, icon: List },
     { id: "validation", label: t.validation, icon: ShieldCheck, hidden: !hasValidation },
@@ -145,6 +146,7 @@ export function RunDetail() {
 
       <div className="flex-1 overflow-auto">
         <ErrorBoundary>
+          {tab === "trace" && <TraceTab run={run} />}
           {tab === "chart" && <ChartTab run={run} />}
           {tab === "trades" && <TradesTab run={run} />}
           {tab === "validation" && run.validation && <ValidationPanel data={run.validation} />}
@@ -182,6 +184,79 @@ function ChartTab({ run }: { run: RunData }) {
           <EquityChart data={run.equity_curve!} height={280} />
         </div>
       )}
+    </div>
+  );
+}
+
+function formatTraceTime(ts: unknown): string {
+  if (typeof ts === "number" && Number.isFinite(ts)) {
+    const d = new Date(ts * 1000);
+    return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  }
+  return "—";
+}
+
+function traceDetailsJson(row: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(row, null, 2);
+  } catch {
+    return String(row);
+  }
+}
+
+function TraceTab({ run }: { run: RunData }) {
+  const { t } = useI18n();
+  const spans = run.agent_trace || [];
+  if (spans.length === 0) {
+    return (
+      <div className="p-8 text-center text-muted-foreground space-y-2">
+        <p className="text-sm">{t.noTrace}</p>
+        <p className="text-xs">trace.jsonl is written by the agent loop when this run executes (tool calls, thinking, etc.).</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 overflow-auto">
+      <p className="text-xs text-muted-foreground mb-3">
+        {spans.length} span{spans.length === 1 ? "" : "s"} · chronological (earliest first)
+      </p>
+      <div className="rounded-md border border-border/60 overflow-x-auto">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead>
+            <tr className="border-b bg-muted/30 text-left text-muted-foreground text-xs">
+              <th className="py-2 px-2 font-medium w-10 whitespace-nowrap">{t.traceColSpan}</th>
+              <th className="py-2 px-2 font-medium whitespace-nowrap">{t.colTime}</th>
+              <th className="py-2 px-2 font-medium whitespace-nowrap">{t.traceColType}</th>
+              <th className="py-2 px-2 font-medium w-12">{t.traceColIter}</th>
+              <th className="py-2 px-2 font-medium whitespace-nowrap">{t.traceColTool}</th>
+              <th className="py-2 px-2 font-medium min-w-[280px]">{t.traceColDetails}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {spans.map((raw, i) => {
+              const row = raw as Record<string, unknown>;
+              const typ = row.type != null ? String(row.type) : "";
+              const iter = row.iter != null ? String(row.iter) : "";
+              const tool = row.tool != null ? String(row.tool) : "";
+              return (
+                <tr key={i} className="border-b last:border-0 align-top hover:bg-muted/15">
+                  <td className="py-2 px-2 font-mono text-xs text-muted-foreground">{i + 1}</td>
+                  <td className="py-2 px-2 font-mono text-xs whitespace-nowrap">{formatTraceTime(row.ts)}</td>
+                  <td className="py-2 px-2 font-mono text-xs">{typ}</td>
+                  <td className="py-2 px-2 font-mono text-xs">{iter}</td>
+                  <td className="py-2 px-2 font-mono text-xs text-primary/90">{tool}</td>
+                  <td className="py-2 px-2 font-mono text-[11px] leading-snug text-muted-foreground max-w-[min(960px,70vw)]">
+                    <pre className="whitespace-pre-wrap break-all m-0 bg-muted/20 rounded p-2 max-h-48 overflow-y-auto">
+                      {traceDetailsJson(row)}
+                    </pre>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

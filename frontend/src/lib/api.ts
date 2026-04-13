@@ -206,6 +206,8 @@ export interface RunData {
   equity_curve?: EquityPoint[];
   trade_log?: Array<Record<string, string>>;
   run_logs?: Array<{ source?: string; line_number?: number; message?: string }>;
+  /** ReAct trace.jsonl spans (sorted by time ascending) */
+  agent_trace?: Array<Record<string, unknown>>;
 }
 
 export interface BacktestMetrics {
