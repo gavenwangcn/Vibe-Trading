@@ -16,6 +16,9 @@ FROM python:3.11-slim AS runtime
 
 WORKDIR /app
 
+# Pip: avoid ReadTimeoutError on slow links to PyPI (e.g. large wheels from files.pythonhosted.org)
+ENV PIP_DEFAULT_TIMEOUT=300
+
 # System deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -23,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python deps (install before copying code for layer caching)
 COPY agent/requirements.txt agent/requirements.txt
-RUN pip install --no-cache-dir -r agent/requirements.txt
+RUN pip install --no-cache-dir --timeout=300 --retries=10 -r agent/requirements.txt
 
 # Copy project
 COPY pyproject.toml LICENSE README.md ./
@@ -33,7 +36,7 @@ COPY agent/ agent/
 COPY --from=frontend-build /app/frontend/dist frontend/dist
 
 # Install CLI entrypoint
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --timeout=300 --retries=10 -e .
 
 # Default port
 EXPOSE 8899
