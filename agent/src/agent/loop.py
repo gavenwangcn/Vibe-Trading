@@ -1,8 +1,9 @@
 """AgentLoop: ReAct core loop.
 
 Three-layer context management:
-  Layer 1 (microcompact) — silently prunes old tool results each iteration, keeping the most recent 3
+  Layer 1 (microcompact) — only full ``role: tool`` contents are kept for the last N tool messages (see ``TOOL_RESULT_KEEP_RECENT``); older tool results become ``[cleared]``
   Layer 2 (auto_compact) — LLM summarises and compresses when token count exceeds threshold, saves transcript
+    (optional ``COMPACT_*`` env: separate OpenAI-compatible model for summarisation)
   Layer 3 (compact tool) — model explicitly calls the compact tool to trigger compression
 """
 
@@ -21,11 +22,13 @@ from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
 from src.providers.chat import ChatLLM
+from src.providers.llm import build_compact_llm
 from src.tools.background_tools import get_background_manager
 
 RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 TOKEN_THRESHOLD = int(os.getenv("TOKEN_THRESHOLD", "40000"))
-KEEP_RECENT = 3
+# Only the last N tool results keep full text in context; older tool messages are cleared (Layer 1).
+TOOL_RESULT_KEEP_RECENT = max(1, int(os.getenv("TOOL_RESULT_KEEP_RECENT", "7")))
 TOOL_RESULT_LIMIT = 10_000
 
 logger = logging.getLogger(__name__)
@@ -44,18 +47,22 @@ def estimate_tokens(messages: list) -> int:
 
 
 def _microcompact(messages: list) -> None:
-    """Layer 1: silently prune old tool results, keeping the most recent N intact.
+    """Layer 1: keep full text only for the last N ``role: tool`` messages; older tool bodies cleared.
+
+    Non-tool messages are unchanged. Only tool outputs are trimmed to cap context growth.
 
     Args:
         messages: Message list (mutated in place).
     """
     tool_msgs = [m for m in messages if m.get("role") == "tool"]
-    if len(tool_msgs) <= KEEP_RECENT:
+    keep = TOOL_RESULT_KEEP_RECENT
+    if len(tool_msgs) <= keep:
         return
-    for msg in tool_msgs[:-KEEP_RECENT]:
+    cleared = "[cleared]"
+    for msg in tool_msgs[:-keep]:
         content = msg.get("content", "")
-        if isinstance(content, str) and len(content) > 100:
-            msg["content"] = "[cleared]"
+        if isinstance(content, str) and content != cleared:
+            msg["content"] = cleared
 
 
 def _is_tool_success(result: str) -> bool:
@@ -79,7 +86,7 @@ class AgentLoop:
         llm: ChatLLM,
         memory: Optional[WorkspaceMemory] = None,
         event_callback: Optional[Callable[[str, Dict[str, Any]], None]] = None,
-        max_iterations: int = 50,
+        max_iterations: int = 150,
     ) -> None:
         """Initialize AgentLoop.
 
@@ -97,6 +104,15 @@ class AgentLoop:
         self.max_iterations = max_iterations
         self._called_ok: set[str] = set()
         self._cancelled: bool = False
+        self._compact_chat: Optional[ChatLLM] = None
+        try:
+            compact_backend = build_compact_llm()
+            if compact_backend is not None:
+                cm = os.getenv("COMPACT_LANGCHAIN_MODEL_NAME", "").strip()
+                self._compact_chat = ChatLLM(model_name=cm, internal_llm=compact_backend)
+                logger.info("Layer 2 context compact uses separate model: %s", cm)
+        except Exception as exc:
+            logger.warning("Failed to init COMPACT_LANGCHAIN_* model; using main LLM for compression: %s", exc)
 
     def cancel(self) -> None:
         """Cancel the current loop.
@@ -292,9 +308,10 @@ class AgentLoop:
             for msg in messages:
                 f.write(json.dumps(msg, default=str, ensure_ascii=False) + "\n")
 
-        # LLM summary (no tools, plain text)
+        # LLM summary (no tools, plain text) — optional dedicated compact model (see COMPACT_LANGCHAIN_*)
+        llm_for_summary = self._compact_chat if self._compact_chat is not None else self.llm
         conv_text = json.dumps(messages[1:], default=str, ensure_ascii=False)[:80000]
-        summary_resp = self.llm.chat([
+        summary_resp = llm_for_summary.chat([
             {"role": "user", "content": (
                 "Summarize this conversation for continuity. Include: "
                 "1) What was accomplished, 2) Current state, 3) Key decisions made. "

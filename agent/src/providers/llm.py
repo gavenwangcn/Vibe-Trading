@@ -56,15 +56,19 @@ def _ensure_dotenv() -> None:
     _dotenv_loaded = True
 
 
-def _sync_provider_env() -> None:
+def _sync_provider_env(provider: Optional[str] = None) -> None:
     """Map provider-specific env vars to OPENAI_* for ChatOpenAI.
 
     Each entry: provider_name -> (api_key_env, base_url_env).
     All base URLs must be set explicitly in .env — no hardcoded defaults.
     api_key_env=None means no key required (e.g. Ollama local).
+
+    Args:
+        provider: Provider id (e.g. ``openai``, ``deepseek``). If None, uses ``LANGCHAIN_PROVIDER``.
     """
     _ensure_dotenv()
-    provider = os.getenv("LANGCHAIN_PROVIDER", "openai").lower()
+    p = provider if provider is not None else os.getenv("LANGCHAIN_PROVIDER", "openai")
+    provider = p.lower().strip()
 
     # (api_key_env, base_url_env)
     _PROVIDER_MAP: dict[str, tuple[str | None, str]] = {
@@ -101,27 +105,40 @@ def _sync_provider_env() -> None:
         os.environ.setdefault("OPENAI_BASE_URL", base_url)
 
 
-def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any:
+def build_llm(
+    *,
+    model_name: Optional[str] = None,
+    provider: Optional[str] = None,
+    callbacks: Any = None,
+    temperature_env: Optional[str] = None,
+    timeout_env: Optional[str] = None,
+) -> Any:
     """Construct a ChatOpenAI instance.
 
     Args:
         model_name: Model name; defaults to LANGCHAIN_MODEL_NAME.
+        provider: Optional provider id for API key/base URL mapping (e.g. ``deepseek``).
+            If None, uses ``LANGCHAIN_PROVIDER``.
         callbacks: Optional LangChain callbacks.
+        temperature_env: Env var name for temperature (default ``LANGCHAIN_TEMPERATURE``).
+        timeout_env: Env var name for timeout in seconds (default ``TIMEOUT_SECONDS``).
 
     Returns:
         ChatOpenAI instance.
 
     Raises:
-        RuntimeError: If langchain-openai is missing or LANGCHAIN_MODEL_NAME is unset.
+        RuntimeError: If langchain-openai is missing or model name is unset.
     """
     if ChatOpenAI is None:
         raise RuntimeError("langchain-openai is not installed")
-    _sync_provider_env()
+    _sync_provider_env(provider=provider)
     name = model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
     if not name:
         raise RuntimeError("LANGCHAIN_MODEL_NAME is not set")
-    temperature = float(os.getenv("LANGCHAIN_TEMPERATURE", "0.0"))
-    timeout = int(os.getenv("TIMEOUT_SECONDS", "120"))
+    t_env = temperature_env or "LANGCHAIN_TEMPERATURE"
+    to_env = timeout_env or "TIMEOUT_SECONDS"
+    temperature = float(os.getenv(t_env, os.getenv("LANGCHAIN_TEMPERATURE", "0.0")))
+    timeout = int(os.getenv(to_env, os.getenv("TIMEOUT_SECONDS", "120")))
     max_retries = int(os.getenv("MAX_RETRIES", "2"))
     return ChatOpenAI(
         model=name,
@@ -129,6 +146,37 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         timeout=timeout,
         max_retries=max_retries,
         callbacks=callbacks,
+    )
+
+
+def build_compact_llm() -> Optional[Any]:
+    """Build a ChatOpenAI used only for Layer 2 context compression (summarise long history).
+
+    Uses the same **OpenAI-compatible** HTTP API as the rest of the stack (``ChatOpenAI``).
+
+    If ``COMPACT_LANGCHAIN_MODEL_NAME`` is unset or empty, returns ``None`` and the main
+    agent model is used for compression (legacy behaviour).
+
+    Set ``COMPACT_LANGCHAIN_PROVIDER`` to any provider id defined in ``_sync_provider_env``
+    (``openai``, ``deepseek``, ``openrouter``, ``groq``, …) so the correct ``*_API_KEY`` and
+    ``*_BASE_URL`` are applied — not limited to DeepSeek. Omit it to reuse the same provider
+    as the main ``LANGCHAIN_PROVIDER`` with only a different model name.
+
+    Returns:
+        ChatOpenAI instance, or None.
+    """
+    if ChatOpenAI is None:
+        return None
+    name = os.getenv("COMPACT_LANGCHAIN_MODEL_NAME", "").strip()
+    if not name:
+        return None
+    compact_prov = os.getenv("COMPACT_LANGCHAIN_PROVIDER", "").strip()
+    provider = compact_prov if compact_prov else None
+    return build_llm(
+        model_name=name,
+        provider=provider,
+        temperature_env="COMPACT_LANGCHAIN_TEMPERATURE",
+        timeout_env="COMPACT_TIMEOUT_SECONDS",
     )
 
 

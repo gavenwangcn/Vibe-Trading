@@ -10,8 +10,8 @@ from typing import Any
 from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.context import ContextBuilder
 
-_MAX_SUBAGENT_ITERATIONS = int(os.getenv("SUBAGENT_MAX_ITER", "25"))
-_MAX_SUBAGENT_TIMEOUT_SEC = int(os.getenv("SUBAGENT_TIMEOUT", "300"))
+_MAX_SUBAGENT_ITERATIONS = int(os.getenv("SUBAGENT_MAX_ITER", "80"))
+_MAX_SUBAGENT_TIMEOUT_SEC = int(os.getenv("SUBAGENT_TIMEOUT", "900"))
 _MAX_SUBAGENT_TOKEN_ESTIMATE = 30000
 
 

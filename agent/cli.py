@@ -221,7 +221,7 @@ def _run_agent(
     prompt: str,
     history: Optional[List[Dict]] = None,
     run_dir_override: Optional[str] = None,
-    max_iter: int = 50,
+    max_iter: int = 150,
     *,
     no_rich: bool = False,
     stream_output: bool = True,
@@ -1350,7 +1350,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pine", metavar="RUN_ID", help="Show Pine Script for TradingView")
     parser.add_argument("--trace", metavar="RUN_ID", help="Replay a run trace")
     parser.add_argument("--skills", action="store_true", help="List skills")
-    parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
+    parser.add_argument("--max-iter", type=int, default=150, help="Maximum agent iterations")
 
     parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
     parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
@@ -1369,7 +1369,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
     run_parser.add_argument("--json", dest="run_json", action="store_true", help="Print machine-readable JSON output")
     run_parser.add_argument("--no-rich", dest="run_no_rich", action="store_true", help="Disable Rich formatting")
-    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=50, help="Maximum agent iterations")
+    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=150, help="Maximum agent iterations")
 
     serve_parser = subparsers.add_parser("serve", help="Start the API server")
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
@@ -1383,7 +1383,7 @@ def _build_parser() -> argparse.ArgumentParser:
     show_parser.add_argument("run_id", help="Run identifier")
 
     chat_parser = subparsers.add_parser("chat", help="Interactive chat mode")
-    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
+    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=150, help="Maximum agent iterations")
 
     subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
 

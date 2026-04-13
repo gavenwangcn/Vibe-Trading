@@ -241,7 +241,7 @@ class SessionService:
             registry=registry,
             llm=llm,
             event_callback=event_callback,
-            max_iterations=50,
+            max_iterations=150,
         )
         self._active_loops[session_id] = agent
 
