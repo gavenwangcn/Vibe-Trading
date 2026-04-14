@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.agent.context import ContextBuilder
+from src.agent.limits import TOOL_RESULT_LIMIT
 from src.agent.skills import SkillsLoader
 from src.providers.chat import ChatLLM
 from src.swarm.models import (
@@ -391,7 +392,7 @@ def run_worker(
                  "status": "ok", "iteration": iteration},
             )
             messages.append(
-                ContextBuilder.format_tool_result(tc.id, tc.name, result[:10_000])
+                ContextBuilder.format_tool_result(tc.id, tc.name, result[:TOOL_RESULT_LIMIT])
             )
 
     # Hit iteration limit — use last meaningful content as summary

@@ -7,8 +7,9 @@ import os
 import time
 from typing import Any
 
-from src.agent.tools import BaseTool, ToolRegistry
 from src.agent.context import ContextBuilder
+from src.agent.limits import TOOL_RESULT_LIMIT
+from src.agent.tools import BaseTool, ToolRegistry
 
 _MAX_SUBAGENT_ITERATIONS = int(os.getenv("SUBAGENT_MAX_ITER", "80"))
 _MAX_SUBAGENT_TIMEOUT_SEC = int(os.getenv("SUBAGENT_TIMEOUT", "900"))
@@ -93,7 +94,7 @@ class SubagentTool(BaseTool):
                 if run_dir and "run_dir" not in tc.arguments:
                     tc.arguments["run_dir"] = run_dir
                 result = child.execute(tc.name, tc.arguments)
-                messages.append(ContextBuilder.format_tool_result(tc.id, tc.name, result[:10000]))
+                messages.append(ContextBuilder.format_tool_result(tc.id, tc.name, result[:TOOL_RESULT_LIMIT]))
 
         return json.dumps(
             {"status": "iteration_limit", "summary": f"Subagent hit iteration limit ({_MAX_SUBAGENT_ITERATIONS} iterations)"},

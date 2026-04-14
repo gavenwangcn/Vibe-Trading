@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.agent.context import ContextBuilder
+from src.agent.limits import TOOL_RESULT_LIMIT, trace_result_preview
 from src.agent.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
@@ -29,7 +30,6 @@ RUNS_DIR = Path(__file__).resolve().parents[2] / "runs"
 TOKEN_THRESHOLD = int(os.getenv("TOKEN_THRESHOLD", "40000"))
 # Only the last N tool results keep full text in context; older tool messages are cleared (Layer 1).
 TOOL_RESULT_KEEP_RECENT = max(1, int(os.getenv("TOOL_RESULT_KEEP_RECENT", "7")))
-TOOL_RESULT_LIMIT = 10_000
 
 logger = logging.getLogger(__name__)
 
@@ -248,10 +248,11 @@ class AgentLoop:
                     truncated = result[:TOOL_RESULT_LIMIT]
                     messages.append(context.format_tool_result(tc.id, tc.name, truncated))
 
-                    trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
-                    react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": result[:200]})
+                    preview = trace_result_preview(result)
+                    trace.write({"type": "tool_result", "iter": iteration, "tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": preview})
+                    react_trace.append({"type": "tool_call", "tool": tc.name, "result_preview": preview})
 
-                    self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": result[:200]})
+                    self._emit("tool_result", {"tool": tc.name, "status": status, "elapsed_ms": elapsed_ms, "preview": preview})
 
                 # Layer 3: compress after all tools have executed
                 if compact_requested:
