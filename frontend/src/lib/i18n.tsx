@@ -1,20 +1,20 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 const messages = {
-  home: "Home", agent: "Agent", runs: "Runs", settings: "Settings",
-  startResearch: "Start Research", describeStrategy: "Describe a trading strategy to get started.",
-  prompt: "e.g. Create a dual MA crossover strategy for 000001.SZ, backtest 2024",
-  send: "Send", loading: "Loading...", noRuns: "No runs yet. Go to Agent to create one.",
-  runHistory: "Run History", status: "Status", elapsed: "Elapsed",
-  chart: "Chart", trades: "Trades", code: "Code", trace: "Trace",
-  noData: "No data available", noTrades: "No trades recorded.", noCode: "No code files.",
-  noTrace: "No trace data.", priceAndTrades: "Price & Trades", equityAndDrawdown: "Equity & Drawdown",
-  examples: "Try an example:", bye: "Goodbye",
-  heroTitle: "AI-Powered Quant Strategy Research",
-  heroDesc: "Describe a trading strategy in natural language. The agent generates code, runs backtests, and optimizes — all in real time.",
-  feat1: "AI Agent", feat1d: "Natural language strategy generation with ReAct reasoning",
-  feat2: "Built-in Backtest", feat2d: "3 data sources: A-shares, US/HK, Crypto",
-  feat3: "Real-time Streaming", feat3d: "Watch the agent think, call tools, and iterate",
+  home: "首页", agent: "Agent", runs: "运行记录", settings: "设置",
+  startResearch: "开始研究", describeStrategy: "请描述你的交易策略，我们来开始。",
+  prompt: "例如：为 000001.SZ 创建双均线交叉策略，并回测 2024 年",
+  send: "发送", loading: "加载中...", noRuns: "还没有运行记录，去 Agent 页面创建一个。",
+  runHistory: "运行历史", status: "状态", elapsed: "耗时",
+  chart: "图表", trades: "交易", code: "代码", trace: "追踪",
+  noData: "暂无数据", noTrades: "暂无交易记录。", noCode: "暂无代码文件。",
+  noTrace: "暂无追踪数据。", priceAndTrades: "价格与交易", equityAndDrawdown: "权益与回撤",
+  examples: "试试这些示例：", bye: "再见",
+  heroTitle: "AI 驱动的量化策略研究",
+  heroDesc: "用自然语言描述交易策略。Agent 会实时生成代码、执行回测并优化。",
+  feat1: "AI Agent", feat1d: "基于 ReAct 推理的自然语言策略生成",
+  feat2: "内置回测", feat2d: "3 类数据源：A 股、港美股、加密",
+  feat3: "实时流式", feat3d: "可视化查看 Agent 思考、调用工具与迭代",
   score: "Score", passed: "Passed", failed: "Failed", findings: "Findings", recommendations: "Recommendations",
   darkMode: "Dark", lightMode: "Light", language: "Language",
   sessions: "Sessions", newChat: "New Chat", deleteConfirm: "Delete?",
@@ -156,9 +156,9 @@ const messages = {
   exportRunComplete: "> Backtest complete",
   downloadTradesCsv: "Download Trades CSV",
   downloadMetricsCsv: "Download Metrics CSV",
-  example1: "Dual MA crossover on 000001.SZ (5/20 day), backtest 2024",
-  example2: "Build a dual MA crossover strategy for 000001.SZ, backtest 2024",
-  example3: "Bollinger band mean-reversion on 600519.SH, backtest last 3 years",
+  example1: "000001.SZ 双均线交叉（5/20 日），回测 2024 年",
+  example2: "为 000001.SZ 构建双均线交叉策略，并回测 2024 年",
+  example3: "600519.SH 布林带均值回归，回测近 3 年",
 } as const;
 
 type Messages = typeof messages;
@@ -174,3 +174,4 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 }
 
 export function useI18n() { return useContext(I18nCtx); }
+

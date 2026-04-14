@@ -1,4 +1,4 @@
-﻿import { Bot, TrendingUp, Bitcoin, Globe, Sparkles, Users } from "lucide-react";
+﻿import { Bot, TrendingUp, Globe, Sparkles, Users } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 interface Example {
@@ -9,98 +9,98 @@ interface Example {
 
 interface Category {
   label: string;
-  icon: React.ReactNode;
+  icon: any;
   color: string;
   examples: Example[];
 }
 
 const CATEGORIES: Category[] = [
   {
-    label: "Multi-Market Backtest",
+    label: "多市场回测",
     icon: <TrendingUp className="h-4 w-4" />,
     color: "text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5",
     examples: [
       {
-        title: "Cross-Market Portfolio",
-        desc: "A-shares + crypto + US equities with risk-parity optimizer",
-        prompt: "Backtest a risk-parity portfolio of 000001.SZ, BTC-USDT, and AAPL for full-year 2024, compare against equal-weight baseline",
+        title: "跨市场组合",
+        desc: "A 股 + 加密 + 美股，使用风险平价优化",
+        prompt: "回测 2024 全年风险平价组合：000001.SZ、BTC-USDT、AAPL，并对比等权基准",
       },
       {
-        title: "BTC 5-Min MACD Strategy",
-        desc: "Minute-level crypto backtest with real-time OKX data",
-        prompt: "Backtest BTC-USDT 5-minute MACD strategy, fast=12 slow=26 signal=9, last 30 days",
+        title: "BTC 5 分钟 MACD 策略",
+        desc: "分钟级加密回测，使用 OKX 实时数据",
+        prompt: "回测 BTC-USDT 5 分钟 MACD 策略，fast=12 slow=26 signal=9，最近 30 天",
       },
       {
-        title: "US Tech Max Diversification",
-        desc: "Portfolio optimizer across FAANG+ via yfinance",
-        prompt: "Backtest AAPL, MSFT, GOOGL, AMZN, NVDA with max_diversification portfolio optimizer, full-year 2024",
+        title: "美股科技最大分散组合",
+        desc: "通过 yfinance 对 FAANG+ 做组合优化",
+        prompt: "对 AAPL、MSFT、GOOGL、AMZN、NVDA 使用 max_diversification 组合优化器，回测 2024 全年",
       },
     ],
   },
   {
-    label: "Research & Analysis",
+    label: "研究与分析",
     icon: <Sparkles className="h-4 w-4" />,
     color: "text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/5",
     examples: [
       {
-        title: "Multi-Factor Alpha Model",
-        desc: "IC-weighted factor synthesis across 300 stocks",
-        prompt: "Build a multi-factor alpha model using momentum, reversal, volatility, and turnover on CSI 300 constituents with IC-weighted factor synthesis, backtest 2023-2024",
+        title: "多因子 Alpha 模型",
+        desc: "在 300 只股票上做 IC 加权因子合成",
+        prompt: "在沪深 300 成分股上，使用动量、反转、波动率、换手率构建多因子 Alpha，并按 IC 加权，回测 2023-2024",
       },
       {
-        title: "Options Greeks Analysis",
-        desc: "Black-Scholes pricing with Delta/Gamma/Theta/Vega",
-        prompt: "Calculate option Greeks using Black-Scholes: spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days, analyze Delta/Gamma/Theta/Vega",
+        title: "期权 Greeks 分析",
+        desc: "Black-Scholes 定价 + Delta/Gamma/Theta/Vega",
+        prompt: "用 Black-Scholes 计算期权 Greeks：spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days，并分析 Delta/Gamma/Theta/Vega",
       },
     ],
   },
   {
-    label: "Swarm Teams",
+    label: "Swarm 团队",
     icon: <Users className="h-4 w-4" />,
     color: "text-violet-400 border-violet-500/30 hover:border-violet-500/60 hover:bg-violet-500/5",
     examples: [
       {
-        title: "Investment Committee Review",
-        desc: "Multi-agent debate: long vs short, risk review, PM decision",
-        prompt: "[Swarm Team Mode] Use the investment_committee preset to evaluate whether to go long or short on NVDA given current market conditions",
+        title: "投委会评审",
+        desc: "多代理辩论：多空观点、风险复核、PM 决策",
+        prompt: "[Swarm Team Mode] 使用 investment_committee 预设，评估在当前市场条件下 NVDA 应该做多还是做空",
       },
       {
-        title: "Quant Strategy Desk",
-        desc: "Screening → factor research → backtest → risk audit pipeline",
-        prompt: "[Swarm Team Mode] Use the quant_strategy_desk preset to find and backtest the best momentum strategy on CSI 300 constituents",
+        title: "量化策略工作台",
+        desc: "筛选 → 因子研究 → 回测 → 风险审计",
+        prompt: "[Swarm Team Mode] 使用 quant_strategy_desk 预设，寻找并回测沪深 300 上最优动量策略",
       },
     ],
   },
   {
-    label: "Document & Web Research",
+    label: "文档与网页研究",
     icon: <Globe className="h-4 w-4" />,
     color: "text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/5",
     examples: [
       {
-        title: "Analyze an Earnings Report PDF",
-        desc: "Upload a PDF and ask questions about the financials",
-        prompt: "Summarize the key financial metrics, risks, and outlook from the uploaded earnings report",
+        title: "分析财报 PDF",
+        desc: "上传 PDF 并提问财务相关问题",
+        prompt: "总结已上传财报中的关键财务指标、主要风险和未来展望",
       },
       {
-        title: "Web Research: Macro Outlook",
-        desc: "Read live web sources for macro analysis",
-        prompt: "Read the latest Fed meeting minutes and summarize the key takeaways for equity and crypto markets",
+        title: "网页研究：宏观展望",
+        desc: "读取最新网页信息做宏观分析",
+        prompt: "阅读最新美联储会议纪要，并总结对股票和加密市场的关键影响",
       },
     ],
   },
 ];
 
 const CAPABILITY_CHIPS = [
-  "56 Finance Skills",
-  "25 Swarm Presets",
-  "19 Agent Tools",
-  "3 Markets: A-Share · Crypto · HK/US",
-  "Minute to Daily Timeframes",
-  "4 Portfolio Optimizers",
-  "15+ Risk Metrics",
-  "Options & Derivatives",
-  "PDF & Web Research",
-  "Factor Analysis & ML",
+  "56 个金融技能",
+  "25 个 Swarm 预设",
+  "19 个 Agent 工具",
+  "3 大市场：A 股 · 加密 · 港美股",
+  "分钟到日线级别",
+  "4 种组合优化器",
+  "15+ 风险指标",
+  "期权与衍生品",
+  "PDF 与网页研究",
+  "因子分析与机器学习",
 ];
 
 interface Props {
@@ -112,7 +112,6 @@ export function WelcomeScreen({ onExample }: Props) {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
-      {/* Header */}
       <div className="space-y-3">
         <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-br from-primary/80 to-info/80 flex items-center justify-center shadow-lg">
           <Bot className="h-8 w-8 text-white" />
@@ -120,7 +119,7 @@ export function WelcomeScreen({ onExample }: Props) {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Vibe-Trading</h2>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
-            vibe trading with your professional financial agent team
+            你的专业金融 Agent 团队
           </p>
           <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
             {t.describeStrategy}
@@ -128,7 +127,6 @@ export function WelcomeScreen({ onExample }: Props) {
         </div>
       </div>
 
-      {/* Capability chips */}
       <div className="flex flex-wrap justify-center gap-2 max-w-lg">
         {CAPABILITY_CHIPS.map((chip) => (
           <span
@@ -140,7 +138,6 @@ export function WelcomeScreen({ onExample }: Props) {
         ))}
       </div>
 
-      {/* Example categories grid */}
       <div className="w-full max-w-2xl text-left space-y-4">
         <p className="text-xs text-muted-foreground px-1">{t.examples}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -173,5 +170,3 @@ export function WelcomeScreen({ onExample }: Props) {
     </div>
   );
 }
-
-
