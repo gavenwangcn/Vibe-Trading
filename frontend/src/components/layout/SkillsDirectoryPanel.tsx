@@ -82,7 +82,7 @@ function SkillLine(props: {
 
 export function SkillsDirectoryPanel() {
   const { t } = useI18n();
-  const [treeOpen, setTreeOpen] = useState(true);
+  const [treeOpen, setTreeOpen] = useState(false);
   const [catalog, setCatalog] = useState<SkillCatalogResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [catOpen, setCatOpen] = useState<Record<string, boolean>>({});
@@ -113,10 +113,11 @@ export function SkillsDirectoryPanel() {
   }, []);
 
   const toggleCat = useCallback((id: string) => {
-    setCatOpen((prev) => ({ ...prev, [id]: !(prev[id] ?? true) }));
+    setCatOpen((prev) => ({ ...prev, [id]: !(prev[id] ?? false) }));
   }, []);
 
-  const isCatOpen = useCallback((id: string) => catOpen[id] ?? true, [catOpen]);
+  /** 分类默认折叠，仅点击左侧 Chevron 展开 */
+  const isCatOpen = useCallback((id: string) => catOpen[id] ?? false, [catOpen]);
 
   const openSkill = useCallback(async (name: string) => {
     setDocLoading(true);
@@ -154,23 +155,32 @@ export function SkillsDirectoryPanel() {
 
   return (
     <>
-      <div className="px-2 py-1.5">
-        <button
-          type="button"
-          onClick={() => setTreeOpen((o) => !o)}
+      <div className="group/head px-2 py-1.5">
+        <div
           className={cn(
-            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors",
-            "text-muted-foreground hover:bg-muted hover:text-foreground"
+            "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium",
+            "text-muted-foreground group-hover/head:bg-muted/50"
           )}
         >
-          {treeOpen ? (
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" />
-          )}
-          <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary/80" />
-          <span className="truncate">{t.skillsDirectory}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setTreeOpen((o) => !o)}
+            aria-expanded={treeOpen}
+            aria-label={treeOpen ? "折叠技能目录" : "展开技能目录"}
+            className={cn(
+              "shrink-0 rounded p-0.5 text-muted-foreground transition-colors",
+              "hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {treeOpen ? (
+              <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+            )}
+          </button>
+          <BookOpen className="h-3.5 w-3.5 shrink-0 text-primary/80" aria-hidden />
+          <span className="min-w-0 flex-1 truncate select-none">{t.skillsDirectory}</span>
+        </div>
 
         {treeOpen && (
           <div className="mt-0.5 ml-1 max-h-64 space-y-1 overflow-y-auto border-l border-border/70 pl-2 pr-0.5">
@@ -181,26 +191,35 @@ export function SkillsDirectoryPanel() {
             ) : (
               categories.map((cat) => (
                 <div key={cat.id} className="space-y-0.5">
-                  <button
-                    type="button"
-                    onClick={() => toggleCat(cat.id)}
+                  <div
                     className={cn(
-                      "flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] font-medium transition-colors",
-                      "text-foreground/90 hover:bg-muted/80"
+                      "flex w-full items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium",
+                      "text-foreground/90"
                     )}
                   >
-                    {isCatOpen(cat.id) ? (
-                      <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
-                    ) : (
-                      <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />
-                    )}
-                    <span className="truncate">
+                    <button
+                      type="button"
+                      onClick={() => toggleCat(cat.id)}
+                      aria-expanded={isCatOpen(cat.id)}
+                      aria-label={isCatOpen(cat.id) ? `折叠「${cat.label_zh}」` : `展开「${cat.label_zh}」`}
+                      className={cn(
+                        "shrink-0 rounded p-0.5 text-muted-foreground transition-colors",
+                        "hover:bg-muted/80 hover:text-foreground"
+                      )}
+                    >
+                      {isCatOpen(cat.id) ? (
+                        <ChevronDown className="h-3 w-3 opacity-60" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 opacity-60" />
+                      )}
+                    </button>
+                    <span className="min-w-0 flex-1 truncate select-none">
                       {cat.label_zh}
                       <span className="ml-1 font-mono text-[10px] font-normal text-muted-foreground/70">
                         ({cat.id})
                       </span>
                     </span>
-                  </button>
+                  </div>
                   {isCatOpen(cat.id) && (
                     <div className="ml-2 space-y-0 border-l border-dashed border-border/50 pl-2">
                       {cat.skills.map((s) => (
