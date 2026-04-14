@@ -115,10 +115,10 @@ def backtest(run_dir: str) -> str:
 
     Supported data sources (set in config.json "source" field):
     - "yfinance": HK/US equities (free, no API key needed)
-    - "okx": cryptocurrency (free, no API key needed)
+    - "ccxt": cryptocurrency default (100+ exchanges, free, no API key)
+    - "okx": cryptocurrency via OKX REST (free, no API key)
     - "tushare": China A-shares (requires TUSHARE_TOKEN env var)
     - "akshare": A-shares, US, HK, futures, forex (free, no API key)
-    - "ccxt": crypto from 100+ exchanges (free, no API key)
     - "auto": auto-detect based on symbol format (with fallback)
 
     Returns metrics (Sharpe, return, drawdown, etc.) and artifact paths.
@@ -376,7 +376,7 @@ _SOURCE_PATTERNS = [
     (re.compile(r"^\d{6}\.(SZ|SH|BJ)$", re.I), "tushare"),
     (re.compile(r"^[A-Z]+\.US$", re.I), "yfinance"),
     (re.compile(r"^\d{3,5}\.HK$", re.I), "yfinance"),
-    (re.compile(r"^[A-Z]+-USDT$", re.I), "okx"),
+    (re.compile(r"^[A-Z]+-USDT$", re.I), "ccxt"),
     (re.compile(r"^[A-Z]+/USDT$", re.I), "ccxt"),
 ]
 
@@ -406,10 +406,10 @@ def get_market_data(
 
     Supported sources:
     - "yfinance": HK/US equities (free, e.g. AAPL.US, 700.HK)
-    - "okx": cryptocurrency (free, e.g. BTC-USDT, ETH-USDT)
+    - "ccxt": cryptocurrency default (100+ exchanges, free, e.g. BTC-USDT or BTC/USDT)
+    - "okx": cryptocurrency via OKX only (free, e.g. BTC-USDT)
     - "tushare": China A-shares (requires TUSHARE_TOKEN, e.g. 000001.SZ)
     - "akshare": A-shares, US, HK, futures, forex (free, e.g. 000001.SZ, AAPL.US)
-    - "ccxt": crypto from 100+ exchanges (free, e.g. BTC/USDT)
     - "auto": auto-detect based on symbol format (with fallback)
 
     Args:

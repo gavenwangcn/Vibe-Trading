@@ -424,7 +424,9 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
 
     try:
         source = context.get("source", "tushare")
-        if source == "okx":
+        if source == "ccxt":
+            from backtest.loaders.ccxt_loader import DataLoader
+        elif source == "okx":
             from backtest.loaders.okx import DataLoader
         elif source == "yfinance":
             from backtest.loaders.yfinance_loader import DataLoader

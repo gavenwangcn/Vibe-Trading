@@ -11,8 +11,8 @@ description: Data source selection decision tree. Load this skill BEFORE any bac
 | tushare | A-shares, funds, futures, macro | Yes (`TUSHARE_TOKEN`) | China network | tushare |
 | akshare | A-shares, US, HK, futures, macro, forex | No | Unrestricted | akshare |
 | yfinance | US stocks, HK stocks, ETFs | No | Needs Yahoo Finance access | yfinance |
-| okx | Crypto (OKX exchange) | No | Needs okx.com access | okx-market |
-| ccxt | Crypto (100+ exchanges) | No | Needs exchange access | ccxt |
+| ccxt | Crypto (100+ exchanges, default) | No | Needs exchange access | ccxt |
+| okx | Crypto (OKX exchange, fallback) | No | Needs okx.com access | okx-market |
 
 ## Decision Tree
 
@@ -30,7 +30,7 @@ You do NOT need to specify a concrete data source in config.json unless the user
 **A-shares**: tushare (if TUSHARE_TOKEN is set) > akshare (free fallback)
 **US stocks**: yfinance > akshare
 **HK stocks**: yfinance > akshare
-**Crypto**: okx (single exchange) > ccxt (multi-exchange)
+**Crypto**: ccxt (multi-exchange, default) > okx (single exchange fallback)
 **Futures**: tushare > akshare
 **Macro / economics**: akshare > tushare
 **Forex**: akshare > yfinance
