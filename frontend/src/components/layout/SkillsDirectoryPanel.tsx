@@ -247,8 +247,8 @@ export function SkillsDirectoryPanel() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {!docLoading && modal.intro_zh ? (
-                <p className="text-xs leading-relaxed text-muted-foreground">{modal.intro_zh}</p>
+              {!docLoading && modal.introZh ? (
+                <p className="text-xs leading-relaxed text-muted-foreground">{modal.introZh}</p>
               ) : null}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
