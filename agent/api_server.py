@@ -633,6 +633,59 @@ async def list_skills():
     ]
 
 
+@app.get("/skills/catalog")
+async def skills_catalog():
+    """Skills grouped by category for sidebar tree (name, Chinese label, intro, description)."""
+    from src.agent.skill_display_zh import CATEGORY_LABEL_ZH, SKILL_INTRO_ZH, SKILL_NAME_ZH
+    from src.agent.skills import SkillsLoader
+
+    loader = SkillsLoader()
+    groups: Dict[str, List[Dict[str, str]]] = {}
+    for s in loader.skills:
+        groups.setdefault(s.category, []).append(
+            {
+                "name": s.name,
+                "name_zh": SKILL_NAME_ZH.get(s.name, s.name),
+                "intro_zh": SKILL_INTRO_ZH.get(s.name, ""),
+                "description": s.description or "",
+            }
+        )
+    order = list(SkillsLoader._CATEGORY_ORDER)
+    tail = sorted(c for c in groups if c not in order)
+    categories: List[Dict[str, Any]] = []
+    for cat in [c for c in order if c in groups] + tail:
+        rows = sorted(groups[cat], key=lambda x: x["name"])
+        categories.append(
+            {
+                "id": cat,
+                "label_zh": CATEGORY_LABEL_ZH.get(cat, cat),
+                "skills": rows,
+            }
+        )
+    return {"categories": categories}
+
+
+@app.get("/skills/{name}/doc")
+async def skill_doc(name: str):
+    """Full SKILL.md body (markdown) for a skill — used in UI modal."""
+    from src.agent.skill_display_zh import SKILL_INTRO_ZH, SKILL_NAME_ZH
+    from src.agent.skills import SkillsLoader
+
+    loader = SkillsLoader()
+    for s in loader.skills:
+        if s.name == name:
+            zh = SKILL_NAME_ZH.get(name, "")
+            title = f"{name} — {zh}" if zh else name
+            return {
+                "name": s.name,
+                "title": title,
+                "name_zh": zh,
+                "intro_zh": SKILL_INTRO_ZH.get(name, ""),
+                "content": s.body,
+            }
+    raise HTTPException(status_code=404, detail="Skill not found")
+
+
 @app.get("/api")
 async def api_info():
     """Service metadata."""

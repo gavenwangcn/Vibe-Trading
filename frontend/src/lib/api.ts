@@ -68,6 +68,10 @@ export const api = {
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
 
+  listSkillsCatalog: () => request<SkillCatalogResponse>("/skills/catalog"),
+  getSkillDoc: (name: string) =>
+    request<SkillDocResponse>(`/skills/${encodeURIComponent(name)}/doc`),
+
   // MCP servers (Cursor-compatible config)
   listMcpServers: () => request<McpServer[]>("/system/mcp/servers"),
   upsertMcpServer: (id: string, body: McpServerUpsert) =>
@@ -179,6 +183,33 @@ export interface SwarmRunSummary {
   created_at: string;
   task_count: number;
   completed_count: number;
+}
+
+export interface SkillCatalogItem {
+  name: string;
+  name_zh: string;
+  /** 中文一句话简介（侧栏展示） */
+  intro_zh: string;
+  /** SKILL.md 原始 description，多为英文 */
+  description: string;
+}
+
+export interface SkillCatalogCategory {
+  id: string;
+  label_zh: string;
+  skills: SkillCatalogItem[];
+}
+
+export interface SkillCatalogResponse {
+  categories: SkillCatalogCategory[];
+}
+
+export interface SkillDocResponse {
+  name: string;
+  title: string;
+  name_zh: string;
+  intro_zh: string;
+  content: string;
 }
 
 // --- Types matching backend API contracts ---

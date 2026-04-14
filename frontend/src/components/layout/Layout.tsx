@@ -8,6 +8,7 @@ import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import { SwarmWorkflowPanel } from "@/components/layout/SwarmWorkflowPanel";
+import { SkillsDirectoryPanel } from "@/components/layout/SkillsDirectoryPanel";
 
 const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
@@ -104,6 +105,7 @@ export function Layout() {
         {!collapsed && (
           <>
             <SwarmWorkflowPanel />
+            <SkillsDirectoryPanel />
             <div className="mx-3 my-2 border-t border-border/60" role="separator" />
             <div className="px-3 pb-2">
               <Link
