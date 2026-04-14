@@ -8,8 +8,8 @@ services:
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
-      # MCP 服务器列表等持久化在 agent/config/mcp_user_config.json；不挂载则重建容器后会丢失
-      - ./agent/config/mcp_user_config.json:/app/agent/config/mcp_user_config.json
+      # MCP 等配置持久化；须挂载目录而非单文件，否则容器内 os.replace(.tmp→json) 在 bind 单文件上易 EBUSY
+      - ./agent/config:/app/agent/config
     restart: unless-stopped
 
   frontend:
