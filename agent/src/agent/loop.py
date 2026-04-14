@@ -235,8 +235,18 @@ class AgentLoop:
                     if "run_dir" not in tc.arguments and self.memory.run_dir:
                         tc.arguments["run_dir"] = self.memory.run_dir
 
+                    exec_args = dict(tc.arguments)
+                    if tc.name == "subagent":
+
+                        def _subagent_sink(event_name: str, data: Dict[str, Any]) -> None:
+                            row: Dict[str, Any] = {"type": event_name, "parent_iter": iteration, **data}
+                            trace.write(row)
+                            self._emit(event_name, {"parent_iter": iteration, **data})
+
+                        exec_args["_subagent_trace"] = _subagent_sink
+
                     t0 = _time.perf_counter()
-                    result = self.registry.execute(tc.name, tc.arguments)
+                    result = self.registry.execute(tc.name, exec_args)
                     elapsed_ms = int((_time.perf_counter() - t0) * 1000)
 
                     self._update_memory(tc.name, result, state_store, run_dir)

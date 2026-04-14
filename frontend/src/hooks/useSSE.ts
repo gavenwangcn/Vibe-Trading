@@ -83,6 +83,8 @@ export function useSSE(config?: SSEConfig) {
       "text_delta", "thinking_done", "tool_call", "tool_result", "compact",
       "attempt.completed", "attempt.failed",
       "heartbeat", "done",
+      "subagent.start", "subagent.thinking", "subagent.tool_call", "subagent.tool_result",
+      "subagent.answer", "subagent.end",
     ];
 
     const handleRaw = (eventType: string, raw: MessageEvent) => {
