@@ -6,6 +6,7 @@ import asyncio
 import atexit
 import concurrent.futures
 import logging
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mcp import ClientSession, StdioServerParameters
@@ -14,8 +15,9 @@ from mcp.types import CallToolResult
 
 logger = logging.getLogger(__name__)
 
-LIST_TIMEOUT = 90.0
-CALL_TIMEOUT = 120.0
+LIST_TIMEOUT = float(os.getenv("MCP_LIST_TIMEOUT", "90"))
+# Single MCP tools/call_tool wait (stdio or SSE)
+CALL_TIMEOUT = float(os.getenv("MCP_CALL_TIMEOUT", "360"))
 
 
 def _params_from_cfg(cfg: Dict[str, Any]) -> StdioServerParameters:
