@@ -288,11 +288,11 @@ export function Agent() {
 
   useEffect(() => () => doDisconnect(), [doDisconnect]);
 
-  /* Safety timeout: if streaming but no SSE event for 90s, reset to idle */
+  /* Safety timeout: if streaming but no SSE event for 6 minutes, reset to idle */
   useEffect(() => {
     if (status !== "streaming") return;
     const timer = setInterval(() => {
-      if (lastEventRef.current && Date.now() - lastEventRef.current > 90_000 && act().status === "streaming") {
+      if (lastEventRef.current && Date.now() - lastEventRef.current > 360_000 && act().status === "streaming") {
         act().setStatus("idle");
         toast.warning("Execution timed out, automatically stopped");
       }
