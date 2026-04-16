@@ -16,8 +16,6 @@ description: >-
 
 本技能位于 **`trade-mcp/skills/trade-strategy/`**（`trade-mcp` 的 `skills` 目录下）。模型通过 **已配置的 trade-mcp** 调用 `trade_look_*` 工具；本技能只规定流程与约束。
 
-**启用方式（任选）**：将本目录 `trade-strategy/` 作为 Cursor Skill 根目录加载，或复制到项目 `.cursor/skills/trade-strategy/`。
-
 ## 执行耗时（必须告知用户）
 
 涉及 **创建策略**、**修改策略（重新生成代码）** 的 MCP 工具调用（例如 **`trade_look_strategy_create_look`**、**`trade_strategy_regenerate_code`**）时，服务端通常要经历大模型生成代码、语法/继承/试跑类校验等步骤，**单次调用耗时可能较长（数分钟级别，极端情况下可达约 5 分钟）**。
