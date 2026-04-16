@@ -8,7 +8,8 @@ description: >-
   uses trade_strategy_regenerate_code to revise strategy after calibration. Strategy create/update tool
   calls can take several minutes (often up to ~5 minutes); tell the user to wait and avoid duplicate
   retries until timeout or error. Use when the user asks to build/configure 盯盘策略、盯盘任务、
-  market_look, validate_symbol, strategy_context, or trade_look_* / trade_strategy_* MCP tools in AIFutureTrade.
+  market_look, validate_symbol, strategy_context, or trade_look_* / trade_strategy_* MCP tools in AIFutureTrade,
+  including deleting a market_look task via trade_look_market_look_delete.
 ---
 
 # trade-strategy
@@ -33,7 +34,7 @@ description: >-
 
 收到「为某某合约（symbol）建盯盘…」类指令时：
 
-- **必读** MCP 工具说明与参数：`trade_look_strategy_create_look`、`trade_look_market_look_create`，以及查询类工具（见 `references/mcp-market-look-tools.md`）。
+- **必读** MCP 工具说明与参数：`trade_look_strategy_create_look`、`trade_look_market_look_create`，以及查询类工具（见 `references/mcp-market-look-tools.md`）。若用户要**删除盯盘任务**，再必读 **`trade_look_market_look_delete`**（第 9 节）。
 - **重点核对**：
   - **创建策略**：`name` 必填；**`validate_symbol` 在业务上为必填**（后端对盯盘策略会校验行情验证用合约；填写 `strategy_code` 时也必须提供）；`strategy_context`、`strategy_code` 语义与长度。
   - **创建盯盘任务**：`symbol`、`strategy_id`、`detail_summary` 必填；`strategy_id` **必须是已存在的 look 策略 UUID**（通常来自上一步创建策略的返回值）。
@@ -49,7 +50,7 @@ description: >-
 ## 3. 记住并回传 ID
 
 - 调用 `trade_look_strategy_create_look` 成功后：在回复中**写明返回的策略 `id`（UUID）**，并说明将用于创建盯盘任务。
-- 调用 `trade_look_market_look_create` 成功后：**写明返回的盯盘任务 `id`**（或响应中主键字段），便于用户后续查询或排查。
+- 调用 `trade_look_market_look_create` 成功后：**写明返回的盯盘任务 `id`**（或响应中主键字段），便于用户后续查询、排查或**删除该盯盘任务**（见第 9 节）。
 - 会话内后续步骤应能复述这些 ID，避免用户重复查找。
 
 ## 4. 创建策略后：核对代码是否满足意图（结合真实执行逻辑）
@@ -105,6 +106,15 @@ description: >-
 - 需要列表或排查时：使用 `trade_look_strategy_search_look`、`trade_look_market_look_query_page`、`trade_look_strategy_get_by_id`、`trade_look_market_look_get_by_id` 等。
 - **修正已存在策略的代码/描述**：使用 **`trade_strategy_regenerate_code`**（见第 7 节闭环）。
 
+## 9. 盯盘任务删除（market_look）
+
+当用户要**取消、清理某条盯盘任务**，或明确表示不再让该任务参与盯盘轮询时：
+
+- **唯一推荐的 MCP 路径**：调用 **`trade_look_market_look_delete`**，参数 **`id`** 为 **`market_look` 表主键**（UUID），即创建任务成功时返回的盯盘任务 `id`；若未知，先用 **`trade_look_market_look_get_by_id`** / **`trade_look_market_look_query_page`** 查到正确 `id` 再删。
+- **成功判定**：以响应 **`success=true` 且 `verifiedAbsent=true`** 为准（服务端删除后会再次按主键查询，确认行已不存在）。`id` 不存在时通常为失败（如 HTTP 404 映射到 `success=false`）；勿仅凭「调用了删除」就认为已清掉。
+- **语义**：删除的是 **`market_look` 一行**，与后端 **`DELETE /api/market-look/{id}`**、前端盯盘详情删除一致；**不会**自动删除关联的 look 策略（`strategys`）。若用户还要废弃策略本身，需按后端/MCP 暴露的策略删除或更新能力另行处理，并在回复中说明二者区别。
+- **字段级说明与注意事项**：见 `references/mcp-market-look-tools.md` 中 **`trade_look_market_look_delete`** 小节。
+
 ## 快速检查清单
 
 0. 若将调用创建策略或 `trade_strategy_regenerate_code`：**是否已提示可能需等待数分钟（约 5 分钟级）**？  
@@ -114,7 +124,8 @@ description: >-
 4. 返回的 ID 是否写清？  
 5. 有代码时是否在执行语义上自洽？复杂时是否有场景级说明/追问？  
 6. 若结果不满意，是否已进入第 7 节闭环，直至用户**确认**或**明确放弃**？  
-7. 是否全程以 MCP 工具为主？
+7. 是否全程以 MCP 工具为主？  
+8. 若用户要**删除盯盘任务**：是否已用 **`trade_look_market_look_delete`** 并以 **`verifiedAbsent`** 确认成功（第 9 节）？
 
 更多字段级说明见：`references/mcp-market-look-tools.md`。  
 **策略正文与生成 Prompt（含 system/user 分工、撰写要点）**：`references/strategy-context-and-look-prompt.md`。  
