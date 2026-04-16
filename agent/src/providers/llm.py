@@ -83,6 +83,7 @@ def _sync_provider_env(provider: Optional[str] = None) -> None:
         "moonshot":   ("MOONSHOT_API_KEY",    "MOONSHOT_BASE_URL"),
         "minimax":    ("MINIMAX_API_KEY",     "MINIMAX_BASE_URL"),
         "mimo":       ("MIMO_API_KEY",        "MIMO_BASE_URL"),
+        "zai":        ("ZAI_API_KEY",         "ZAI_BASE_URL"),
         "ollama":     (None,                  "OLLAMA_BASE_URL"),
     }
 
@@ -139,6 +140,11 @@ def build_llm(
     to_env = timeout_env or "TIMEOUT_SECONDS"
     temperature = float(os.getenv(t_env, os.getenv("LANGCHAIN_TEMPERATURE", "0.0")))
     timeout = int(os.getenv(to_env, os.getenv("TIMEOUT_SECONDS", "120")))
+    # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
+    # default 0.0 is used to avoid an API validation error.
+    eff_provider = (provider or os.getenv("LANGCHAIN_PROVIDER", "openai")).lower()
+    if eff_provider == "minimax" and temperature <= 0.0:
+        temperature = 0.01
     max_retries = int(os.getenv("MAX_RETRIES", "2"))
     return ChatOpenAI(
         model=name,
