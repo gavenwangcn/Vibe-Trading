@@ -51,6 +51,7 @@
 
 ## 📰 新闻
 
+- **2026-04-15** 🤖 **Z.ai + MiniMax**：新增 Z.ai 提供商（[#35](https://github.com/HKUDS/Vibe-Trading/pull/35)），修复 MiniMax temperature 及模型更新（[#33](https://github.com/HKUDS/Vibe-Trading/pull/33)）。共 13 家提供商。
 - **2026-04-14** 🔧 **MCP 稳定性**：修复回测工具在 stdio 传输中的 `Connection closed` 错误（[#32](https://github.com/HKUDS/Vibe-Trading/pull/32)）。
 - **2026-04-13** 🌐 **跨市场复合回测**：新增 `CompositeEngine`，混合不同市场标的（如 A 股 + 加密货币）共享资金池回测，各市场规则按标的独立执行。同时修复 swarm 模板变量回退和前端超时问题。
 - **2026-04-12** 🌍 **多平台指标导出**：`/pine` 一次性导出 TradingView (Pine Script v6)、通达信/同花顺/东方财富 (TDX)、MetaTrader 5 (MQL5) 三大平台。
@@ -224,7 +225,7 @@ vibe-trading-mcp               # 启动 MCP 服务器（stdio）
 - Path B 需 **Python 3.11+**
 - Path A 需 **Docker**
 
-> **支持的 LLM 提供商：** OpenRouter、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、智谱、Moonshot/Kimi、MiniMax、小米 MIMO、Ollama（本地）。参见 `.env.example` 配置。
+> **支持的 LLM 提供商：** OpenRouter、OpenAI、DeepSeek、Gemini、Groq、DashScope/Qwen、智谱、Moonshot/Kimi、MiniMax、小米 MIMO、Z.ai、Ollama（本地）。参见 `.env.example` 配置。
 
 > **提示：** 所有市场都可在无 API key 情况下运行，因自动回退。yfinance（港美股）、OKX（加密）、AKShare（A 股、美股、港股、期货、外汇）均免费。Tushare token 可选——A 股可回退到 AKShare 免费获取。
 
@@ -298,7 +299,7 @@ npx clawhub@latest install vibe-trading --force
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `LANGCHAIN_PROVIDER` | Yes | 提供商名称（`openrouter`、`deepseek`、`groq`、`ollama` 等） |
+| `LANGCHAIN_PROVIDER` | Yes | 提供商名称（`openrouter`、`deepseek`、`groq`、`z.ai`、`ollama` 等） |
 | `<PROVIDER>_API_KEY` | Yes* | API key（`OPENROUTER_API_KEY`、`DEEPSEEK_API_KEY` 等） |
 | `<PROVIDER>_BASE_URL` | Yes | API 端点 URL |
 | `LANGCHAIN_MODEL_NAME` | Yes | 模型名（如 `deepseek/deepseek-v3.2`） |
