@@ -12,6 +12,7 @@ import { MetricsCard } from "@/components/chat/MetricsCard";
 import { ValidationPanel } from "@/components/charts/ValidationPanel";
 import { Skeleton, SkeletonMetrics, SkeletonChart } from "@/components/common/Skeleton";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { formatDateTimeShanghai } from "@/lib/shanghaiTime";
 
 const rehypePlugins = [rehypeHighlight];
 
@@ -190,8 +191,8 @@ function ChartTab({ run }: { run: RunData }) {
 
 function formatTraceTime(ts: unknown): string {
   if (typeof ts === "number" && Number.isFinite(ts)) {
-    const d = new Date(ts * 1000);
-    return isNaN(d.getTime()) ? "—" : d.toLocaleString();
+    const ms = ts * 1000;
+    return isNaN(new Date(ms).getTime()) ? "—" : formatDateTimeShanghai(ms);
   }
   return "—";
 }

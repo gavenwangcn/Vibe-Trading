@@ -7,11 +7,11 @@ SwarmRun / SwarmAgentSpec / SwarmTask data models.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
+from src.shanghai_time import now_shanghai
 from src.swarm.models import RunStatus, SwarmAgentSpec, SwarmRun, SwarmTask, TaskStatus
 
 PRESETS_DIR = Path(__file__).resolve().parents[2] / "config" / "swarm"
@@ -118,8 +118,8 @@ def build_run_from_preset(preset_name: str, user_vars: dict[str, str]) -> SwarmR
             status=status,
         ))
 
-    # Generate run ID
-    now = datetime.now(timezone.utc)
+    # Generate run ID (wall clock in Asia/Shanghai)
+    now = now_shanghai()
     ts = now.strftime("%Y%m%d-%H%M%S")
     short_uuid = uuid.uuid4().hex[:8]
     run_id = f"swarm-{ts}-{short_uuid}"

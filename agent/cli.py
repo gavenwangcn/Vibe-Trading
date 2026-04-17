@@ -1020,8 +1020,8 @@ def cmd_skills() -> None:
 
 def cmd_trace(run_id: str) -> None:
     """Replay trace.jsonl to show full execution."""
-    from datetime import datetime
     from src.agent.trace import TraceWriter
+    from src.shanghai_time import format_epoch_shanghai_hms
 
     run_dir = RUNS_DIR / run_id
     if not run_dir.exists():
@@ -1038,7 +1038,7 @@ def cmd_trace(run_id: str) -> None:
     for entry in entries:
         etype = entry.get("type", "?")
         ts = entry.get("ts", 0)
-        ts_str = datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else ""
+        ts_str = format_epoch_shanghai_hms(ts) if ts else ""
         it = entry.get("iter", "")
         iter_tag = f"[dim]#{it}[/dim] " if it else ""
 

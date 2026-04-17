@@ -10,10 +10,10 @@ from __future__ import annotations
 import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from src.shanghai_time import now_shanghai_iso
 from src.swarm.mailbox import Mailbox
 from src.swarm.models import (
     RunStatus,
@@ -160,7 +160,7 @@ class SwarmRuntime:
             agent_id=agent_id,
             task_id=task_id,
             data=data or {},
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=now_shanghai_iso(),
         )
 
     def _execute_run(self, run: SwarmRun, cancel_event: threading.Event) -> None:
@@ -237,7 +237,7 @@ class SwarmRuntime:
 
                     if result.status in ("completed", "timeout", "token_limit"):
                         task_summaries[tid] = result.summary
-                        now_iso = datetime.now(timezone.utc).isoformat()
+                        now_iso = now_shanghai_iso()
                         task_store.update_status(
                             tid, TaskStatus.completed,
                             summary=result.summary,
@@ -259,7 +259,7 @@ class SwarmRuntime:
                         task_store.update_status(
                             tid, TaskStatus.failed,
                             error=result.error or "Unknown error",
-                            completed_at=datetime.now(timezone.utc).isoformat(),
+                            completed_at=now_shanghai_iso(),
                             worker_iterations=result.iterations,
                         )
                         self._emit_event(
@@ -285,7 +285,7 @@ class SwarmRuntime:
             else RunStatus.failed
         )
         run.status = final_status
-        run.completed_at = datetime.now(timezone.utc).isoformat()
+        run.completed_at = now_shanghai_iso()
 
         # Sync tasks back to run model
         run.tasks = task_store.load_all()
@@ -354,7 +354,7 @@ class SwarmRuntime:
                 # Mark task as in_progress
                 task_store.update_status(
                     tid, TaskStatus.in_progress,
-                    started_at=datetime.now(timezone.utc).isoformat(),
+                    started_at=now_shanghai_iso(),
                 )
                 self._emit_event(
                     run.id,

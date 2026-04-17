@@ -10,11 +10,11 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from src.agent.context import ContextBuilder
+from src.shanghai_time import now_shanghai, now_shanghai_iso
 from src.agent.limits import TOOL_RESULT_LIMIT
 from src.agent.skills import SkillsLoader
 from src.providers.chat import ChatLLM
@@ -56,7 +56,7 @@ def _emit(
         agent_id=agent_id,
         task_id=task_id,
         data=data or {},
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=now_shanghai_iso(),
     )
     try:
         callback(event)
@@ -171,10 +171,11 @@ def build_worker_prompt(
         "- Respond in the same language as the task prompt."
     )
 
-    now = datetime.now()
+    now = now_shanghai()
     prompt_parts.append(
         f"## Current Date & Time\n\n"
-        f"Today is {now.strftime('%A, %B %d, %Y %H:%M (local)')}."
+        f"Today is {now.strftime('%A, %B %d, %Y %H:%M (Asia/Shanghai)')}. "
+        f"Use Asia/Shanghai for any time the user asks about \"now\" or calendar dates."
     )
 
     return "\n\n".join(prompt_parts)

@@ -6,6 +6,7 @@ import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/api";
+import { formatDateShanghaiForFilename, formatDateTimeShanghai } from "@/lib/shanghaiTime";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
 import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
@@ -573,9 +574,9 @@ export function Agent() {
 
   const handleExport = () => {
     if (messages.length === 0) return;
-    const lines: string[] = [`# Chat Export`, ``, `Export time: ${new Date().toLocaleString()}`, ``];
+    const lines: string[] = [`# Chat Export`, ``, `Export time: ${formatDateTimeShanghai(Date.now())} (Asia/Shanghai)`, ``];
     for (const msg of messages) {
-      const time = new Date(msg.timestamp).toLocaleString();
+      const time = formatDateTimeShanghai(msg.timestamp);
       if (msg.type === "user") {
         lines.push(`## User (${time})`, ``, msg.content, ``);
       } else if (msg.type === "answer") {
@@ -592,7 +593,7 @@ export function Agent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `chat_${new Date().toISOString().slice(0, 10)}.md`;
+    a.download = `chat_${formatDateShanghaiForFilename()}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };

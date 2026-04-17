@@ -1,3 +1,5 @@
+import { formatTimestampShanghai } from "./shanghaiTime";
+
 /** Maps metric keys to i18n translation keys */
 export const METRIC_I18N_KEYS: Record<string, string> = {
   total_return: "metricTotalReturn",
@@ -60,8 +62,7 @@ export const DISPLAY_ORDER = [
 ];
 
 export function formatTimestamp(ts: number): string {
-  const d = new Date(ts);
-  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  return formatTimestampShanghai(ts);
 }
 
 export function abbreviateNum(v: number): string {

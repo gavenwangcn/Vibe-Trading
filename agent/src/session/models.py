@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, asdict
-from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+from src.shanghai_time import now_shanghai_iso
 
 
 class SessionStatus(str, Enum):
@@ -45,8 +46,8 @@ class Session:
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     title: str = ""
     status: SessionStatus = SessionStatus.ACTIVE
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=now_shanghai_iso)
+    updated_at: str = field(default_factory=now_shanghai_iso)
     last_attempt_id: Optional[str] = None
     config: Dict[str, Any] = field(default_factory=dict)
 
@@ -94,7 +95,7 @@ class Message:
     session_id: str = ""
     role: str = "user"
     content: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=now_shanghai_iso)
     linked_attempt_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -146,7 +147,7 @@ class Attempt:
     run_dir: Optional[str] = None
     summary: Optional[str] = None
     react_trace: List[Dict[str, Any]] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=now_shanghai_iso)
     completed_at: Optional[str] = None
     error: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
@@ -188,7 +189,7 @@ class Attempt:
             summary: Execution summary.
         """
         self.status = AttemptStatus.COMPLETED
-        self.completed_at = datetime.now().isoformat()
+        self.completed_at = now_shanghai_iso()
         if summary:
             self.summary = summary
 
@@ -199,7 +200,7 @@ class Attempt:
             error: Error message.
         """
         self.status = AttemptStatus.FAILED
-        self.completed_at = datetime.now().isoformat()
+        self.completed_at = now_shanghai_iso()
         self.error = error
 
     def mark_waiting_user(self) -> None:

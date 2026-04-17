@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
+from src.shanghai_time import now_shanghai
 
 if TYPE_CHECKING:
     from src.memory.persistent import PersistentMemory
@@ -62,6 +62,7 @@ Decide which workflow to use based on the request:
 - Output results as markdown tables. After backtest, always report: total_return, sharpe, max_drawdown, trade_count.
 - All file paths are relative to run_dir (auto-injected).
 - Respond in the same language the user used.
+- **Time zone:** Whenever you report, query, or generate the current date/time (or interpret "today"), use **Asia/Shanghai** (China Standard Time, UTC+8). Do not use the server's local timezone.
 - You have persistent cross-session memory (`remember` tool). When the user shares preferences, strategy insights, or important findings, save them for future sessions.
 - For multi-step plans with optional dependencies, use `task_create`, `task_update`, `task_list`, and `task_get` (tasks persist under the agent `.tasks` store).
 - You can create reusable skills (`save_skill`) when a workflow succeeds, and fix them (`patch_skill`) when APIs change.
@@ -116,7 +117,7 @@ class ContextBuilder:
         Returns:
             System prompt text.
         """
-        now = datetime.now()
+        now = now_shanghai()
 
         # Build memory section only if there are saved memories
         memory_section = ""
@@ -132,7 +133,7 @@ class ContextBuilder:
             skill_descriptions=self.skills_loader.get_descriptions(),
             memory_summary=self.memory.to_summary(),
             memory_section=memory_section,
-            current_datetime=now.strftime("%A, %B %d, %Y %H:%M (local)"),
+            current_datetime=now.strftime("%A, %B %d, %Y %H:%M (Asia/Shanghai)"),
         )
 
     def build_messages(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:

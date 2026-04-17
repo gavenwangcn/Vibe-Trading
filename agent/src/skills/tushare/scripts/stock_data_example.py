@@ -71,15 +71,17 @@ def main():
         ts_code = stock_list['ts_code'].iloc[0]
         print(f"\n使用股票代码：{ts_code}")
         
-        # 获取日线数据（最近30天）
+        # 获取日线数据（最近30天，日历按 Asia/Shanghai）
         import datetime
-        end_date = datetime.datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d')
+        from datetime import timedelta, timezone
+        _cn = datetime.datetime.now(timezone(timedelta(hours=8)))
+        end_date = _cn.strftime('%Y%m%d')
+        start_date = (_cn - datetime.timedelta(days=30)).strftime('%Y%m%d')
         print(f"\n获取日线数据：{start_date} 至 {end_date}")
         get_daily_data(ts_code, start_date, end_date)
         
         # 获取财务数据（最近一年）
-        current_year = datetime.datetime.now().year
+        current_year = _cn.year
         print(f"\n获取财务数据：{current_year-1}年 第4季度")
         get_financial_data(ts_code, current_year-1, 4)
 

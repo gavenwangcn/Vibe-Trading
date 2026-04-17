@@ -15,7 +15,6 @@ import time
 import csv
 import mimetypes
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +28,7 @@ from rich.console import Console
 
 from src.agent.trace import TraceWriter
 from src.swarm.presets import PRESETS_DIR
+from src.shanghai_time import format_epoch_shanghai, now_shanghai_iso
 from src.ui_services import build_run_analysis, load_run_context
 
 from mcp_settings_api import router as mcp_settings_router
@@ -533,8 +533,7 @@ async def list_runs(limit: int = 20):
                     created_at = f"{d_str[:4]}-{d_str[4:6]}-{d_str[6:8]} {t_str[:2]}:{t_str[2:4]}:{t_str[4:6]}"
         
         if created_at == "Unknown":
-            mtime = datetime.fromtimestamp(d.stat().st_mtime)
-            created_at = mtime.strftime("%Y-%m-%d %H:%M:%S")
+            created_at = format_epoch_shanghai(d.stat().st_mtime, "%Y-%m-%d %H:%M:%S")
         
         prompt = None
         req_file = d / "req.json"
@@ -593,7 +592,7 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         service="Vibe-Trading API",
-        timestamp=datetime.now().isoformat()
+        timestamp=now_shanghai_iso()
     )
 
 
@@ -614,7 +613,7 @@ async def shutdown_local_api(background_tasks: BackgroundTasks, request: Request
     return {
         "status": "shutting-down",
         "service": "Vibe-Trading API",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": now_shanghai_iso(),
     }
 
 
@@ -819,8 +818,7 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
     if req.title is not None:
         session.title = req.title
-    from datetime import datetime
-    session.updated_at = datetime.now().isoformat()
+    session.updated_at = now_shanghai_iso()
     svc.store.update_session(session)
     return {"status": "updated", "session_id": session_id}
 

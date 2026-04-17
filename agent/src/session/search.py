@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from src.shanghai_time import format_epoch_shanghai
+
 logger = logging.getLogger(__name__)
 
 _DB_PATH = Path.home() / ".vibe-trading" / "sessions.db"
@@ -311,7 +313,7 @@ class SessionSearchIndex:
     def _format_time(epoch: float) -> str:
         """Format epoch timestamp to human-readable string."""
         try:
-            return datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M")
+            return format_epoch_shanghai(epoch)
         except (OSError, ValueError):
             return "unknown"
 

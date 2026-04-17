@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
+
+from src.shanghai_time import now_shanghai
 
 
 class RunStateStore:
@@ -21,7 +22,7 @@ class RunStateStore:
         Returns:
             Newly created run directory path.
         """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:18]
+        timestamp = now_shanghai().strftime("%Y%m%d_%H%M%S_%f")[:18]
         suffix = uuid.uuid4().hex[:6]
         run_dir = workspace / f"{timestamp}_{suffix}"
         run_dir.mkdir(parents=True, exist_ok=True)

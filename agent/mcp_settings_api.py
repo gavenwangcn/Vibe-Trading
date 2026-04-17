@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from src.mcp_integration import runtime, store
+from src.shanghai_time import now_shanghai_iso
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ async def get_server_tools(
         if ok:
             cfg["_cached_tools"] = live_tools
             cfg["_last_error"] = None
-            cfg["_last_ok_at"] = datetime.now(timezone.utc).isoformat()
+            cfg["_last_ok_at"] = now_shanghai_iso()
         else:
             cfg["_last_error"] = err
         store.set_server(server_id, cfg)
@@ -192,7 +192,7 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     if ok:
         cfg["_cached_tools"] = tools
         cfg["_last_error"] = None
-        cfg["_last_ok_at"] = datetime.now(timezone.utc).isoformat()
+        cfg["_last_ok_at"] = now_shanghai_iso()
     else:
         cfg["_last_error"] = err
     store.set_server(server_id, cfg)

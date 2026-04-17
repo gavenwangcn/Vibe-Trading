@@ -73,8 +73,10 @@ def main():
         
         # 获取基金净值数据（最近30天）
         import datetime
-        end_date = datetime.datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y%m%d')
+        from datetime import timedelta, timezone
+        _cn = datetime.datetime.now(timezone(timedelta(hours=8)))
+        end_date = _cn.strftime('%Y%m%d')
+        start_date = (_cn - datetime.timedelta(days=30)).strftime('%Y%m%d')
         print(f"\n获取基金净值数据：{start_date} 至 {end_date}")
         get_fund_nav(ts_code, start_date, end_date)
     

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -23,6 +22,7 @@ from src.session.models import (
 )
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
+from src.shanghai_time import now_shanghai_iso
 
 
 class SessionService:
@@ -108,7 +108,7 @@ class SessionService:
         attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
         self.store.create_attempt(attempt)
         session.last_attempt_id = attempt.attempt_id
-        session.updated_at = datetime.now().isoformat()
+        session.updated_at = now_shanghai_iso()
         self.store.update_session(session)
         self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
 
