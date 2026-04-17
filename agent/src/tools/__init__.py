@@ -1,92 +1,103 @@
-"""Tool registry: v7 atomic tools + domain tools."""
+"""Tool registry: auto-discovery via BaseTool.__subclasses__().
 
-from src.agent.tools import ToolRegistry
+Adding a new tool:
+  1. Create a file in src/tools/ with a class extending BaseTool
+  2. Done. It's automatically discovered and registered.
+
+Tools with missing dependencies can override check_available() → False
+to be silently excluded from the registry.
+"""
+
+import importlib
+import logging
+import pkgutil
+from collections import deque
+from pathlib import Path
+
+from src.agent.tools import BaseTool, ToolRegistry
+
+logger = logging.getLogger(__name__)
+
+_SUBCLASSES_CACHE: list[type[BaseTool]] | None = None
 
 
-def build_registry() -> ToolRegistry:
-    """Build static tool registry (built-in tools only — no MCP plugin).
+def _discover_subclasses() -> list[type[BaseTool]]:
+    """Import all modules in this package, then collect BaseTool subclasses.
 
-    Used by standalone ``mcp_server`` (Vibe MCP) and lightweight subagents where
-    dynamic MCP discovery is not desired.
+    Results are cached after the first call.
 
     Returns:
-        ToolRegistry containing built-in tools only.
+        List of concrete BaseTool subclasses with a non-empty name.
     """
-    from src.tools.bash_tool import BashTool
-    from src.tools.read_file_tool import ReadFileTool
-    from src.tools.write_file_tool import WriteFileTool
-    from src.tools.edit_file_tool import EditFileTool
-    from src.tools.load_skill_tool import LoadSkillTool
-    from src.tools.backtest_tool import BacktestTool
-    from src.tools.pattern_tool import PatternTool
-    from src.tools.compact_tool import CompactTool
-    from src.tools.subagent_tool import SubagentTool
-    from src.tools.task_tools import TaskCreateTool, TaskUpdateTool, TaskListTool, TaskGetTool
-    from src.tools.background_tools import BackgroundRunTool, CheckBackgroundTool
-    from src.tools.web_reader_tool import WebReaderTool
-    from src.tools.web_search_tool import WebSearchTool
-    from src.tools.doc_reader_tool import DocReaderTool
-    from src.tools.factor_analysis_tool import FactorAnalysisTool
-    from src.tools.options_pricing_tool import OptionsPricingTool
-    from src.tools.swarm_tool import SwarmTool
+    global _SUBCLASSES_CACHE
+    if _SUBCLASSES_CACHE is not None:
+        return _SUBCLASSES_CACHE
+
+    pkg_dir = str(Path(__file__).parent)
+    for _, module_name, _ in pkgutil.iter_modules([pkg_dir]):
+        if module_name.startswith("_"):
+            continue
+        try:
+            importlib.import_module(f"src.tools.{module_name}")
+        except Exception as exc:
+            logger.warning("Skipped src.tools.%s: %s", module_name, exc)
+
+    classes: list[type[BaseTool]] = []
+    queue = deque(BaseTool.__subclasses__())
+    while queue:
+        cls = queue.popleft()
+        if cls.name:
+            classes.append(cls)
+        queue.extend(cls.__subclasses__())
+
+    _SUBCLASSES_CACHE = classes
+    return classes
+
+
+def build_registry(*, persistent_memory: "PersistentMemory | None" = None) -> ToolRegistry:
+    """Build the tool registry via auto-discovery.
+
+    Args:
+        persistent_memory: Shared PersistentMemory instance. Injected into
+            tools that need it (e.g. RememberTool) so all tools share one
+            instance instead of each creating their own.
+
+    Returns:
+        ToolRegistry containing all available tools.
+    """
+    from src.tools.remember_tool import RememberTool
+
     registry = ToolRegistry()
-    for tool in [BashTool(), ReadFileTool(), WriteFileTool(),
-                 EditFileTool(), LoadSkillTool(), BacktestTool(),
-                 PatternTool(), CompactTool(), SubagentTool(),
-                 TaskCreateTool(), TaskUpdateTool(), TaskListTool(), TaskGetTool(),
-                 BackgroundRunTool(), CheckBackgroundTool(),
-                 WebReaderTool(), WebSearchTool(), DocReaderTool(),
-                 FactorAnalysisTool(), OptionsPricingTool(), SwarmTool()]:
-        registry.register(tool)
-    return registry
-
-
-def build_registry_for_agent() -> ToolRegistry:
-    """Build registry for the main web Agent: built-in tools plus MCP dynamic tools.
-
-    On each call, reconnects to enabled MCP servers (or uses cached ``list_tools`` from the
-    settings UI test) and registers each remote tool as a first-class function for the LLM
-    (same ``tools`` array as native tools).
-
-    Returns:
-        ToolRegistry with static + MCP tools.
-    """
-    from src.tools.mcp_tools import register_mcp_tools
-
-    registry = build_registry()
-    register_mcp_tools(registry)
+    for cls in _discover_subclasses():
+        try:
+            if not cls.check_available():
+                logger.info("Tool %s unavailable, skipping", cls.name)
+                continue
+            if cls is RememberTool and persistent_memory is not None:
+                registry.register(cls(memory=persistent_memory))
+            else:
+                registry.register(cls())
+        except Exception as exc:
+            logger.warning("Failed to register tool %s: %s", cls.name, exc)
     return registry
 
 
 def build_filtered_registry(tool_names: list[str]) -> ToolRegistry:
-    """Build a filtered registry from the agent pool.
-
-    If the literal name ``mcp`` appears in ``tool_names``, the pool includes dynamically
-    discovered MCP tools (``build_registry_for_agent``). Otherwise only built-in tools are
-    loaded (faster; no MCP subprocesses).
-
-    When MCP is included, all tools whose function names start with ``mcp_`` are kept if
-    ``mcp`` is in ``tool_names``, in addition to exact name matches.
+    """Build a ToolRegistry with only specified tools.
 
     Args:
         tool_names: Tool names to include.
 
     Returns:
-        Filtered ToolRegistry.
+        ToolRegistry containing only the requested tools.
     """
-    names = set(tool_names or [])
-    include_mcp = "mcp" in names
-    full = build_registry_for_agent() if include_mcp else build_registry()
+    full = build_registry()
     filtered = ToolRegistry()
-    for tname in full.tool_names:
-        tool = full.get(tname)
-        if not tool:
-            continue
-        if tname in names:
-            filtered.register(tool)
-        elif include_mcp and tname.startswith("mcp_"):
+    for name in tool_names:
+        tool = full.get(name)
+        if tool:
             filtered.register(tool)
     return filtered
 
 
-__all__ = ["build_registry", "build_registry_for_agent", "build_filtered_registry"]
+__all__ = ["build_registry", "build_filtered_registry"]

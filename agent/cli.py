@@ -172,17 +172,10 @@ def _format_tool_call_args(tool: str, args: Dict[str, str]) -> str:
     if tool in ("bash", "background_run"):
         cmd = args.get("command", "")[:80]
         return f' [yellow]{cmd}[/yellow]'
-    if tool == "subagent":
-        desc = args.get("description", args.get("prompt", "")[:60])
-        return f' [magenta]{desc}[/magenta]'
-    if tool == "task_create":
-        return f' "{args.get("subject", "")}"'
-    if tool == "task_update":
-        return f' #{args.get("task_id", "")} -> {args.get("status", "")}'
     if tool == "check_background":
         tid = args.get("task_id", "")
         return f' {tid}' if tid else ""
-    if tool in ("backtest", "compact", "task_list"):
+    if tool in ("backtest", "compact"):
         return ""
     for v in args.values():
         if v and v != "None":
@@ -207,11 +200,6 @@ def _format_tool_result_preview(tool: str, status: str, preview: str) -> str:
         if "OK" in preview[:50]:
             return "OK"
         return preview[:60].replace("\n", " ")
-    if tool == "subagent":
-        m = re.search(r'"summary":\s*"(.{0,80})', preview)
-        return m.group(1).rstrip('"') if m else ""
-    if tool in ("task_create", "task_update"):
-        return preview[:60].replace("\n", " ")
     if tool in ("read_file", "load_skill", "compact"):
         return ""
     return ""
@@ -221,13 +209,13 @@ def _run_agent(
     prompt: str,
     history: Optional[List[Dict]] = None,
     run_dir_override: Optional[str] = None,
-    max_iter: int = 150,
+    max_iter: int = 50,
     *,
     no_rich: bool = False,
     stream_output: bool = True,
 ) -> dict:
     """Build AgentLoop and execute, return result dict."""
-    from src.tools import build_registry_for_agent
+    from src.tools import build_registry
     from src.providers.chat import ChatLLM
     from src.agent.loop import AgentLoop
 
@@ -283,11 +271,15 @@ def _run_agent(
             tokens = data.get("tokens_before", "?")
             console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
 
+    from src.memory.persistent import PersistentMemory
+
+    pm = PersistentMemory()
     agent = AgentLoop(
-        registry=build_registry_for_agent(),
+        registry=build_registry(persistent_memory=pm),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,
+        persistent_memory=pm,
     )
     if run_dir_override:
         agent.memory.run_dir = run_dir_override
@@ -1350,7 +1342,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pine", metavar="RUN_ID", help="Show Pine Script for TradingView")
     parser.add_argument("--trace", metavar="RUN_ID", help="Replay a run trace")
     parser.add_argument("--skills", action="store_true", help="List skills")
-    parser.add_argument("--max-iter", type=int, default=150, help="Maximum agent iterations")
+    parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
 
     parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
     parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
@@ -1369,7 +1361,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
     run_parser.add_argument("--json", dest="run_json", action="store_true", help="Print machine-readable JSON output")
     run_parser.add_argument("--no-rich", dest="run_no_rich", action="store_true", help="Disable Rich formatting")
-    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=150, help="Maximum agent iterations")
+    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=50, help="Maximum agent iterations")
 
     serve_parser = subparsers.add_parser("serve", help="Start the API server")
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
@@ -1383,7 +1375,7 @@ def _build_parser() -> argparse.ArgumentParser:
     show_parser.add_argument("run_id", help="Run identifier")
 
     chat_parser = subparsers.add_parser("chat", help="Interactive chat mode")
-    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=150, help="Maximum agent iterations")
+    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
 
     subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
 
