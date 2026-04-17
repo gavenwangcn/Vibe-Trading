@@ -55,7 +55,7 @@ def _discover_subclasses() -> list[type[BaseTool]]:
 
 
 def build_registry(*, persistent_memory: "PersistentMemory | None" = None) -> ToolRegistry:
-    """Build the tool registry via auto-discovery.
+    """Build the tool registry via auto-discovery, then merge MCP server tools.
 
     Args:
         persistent_memory: Shared PersistentMemory instance. Injected into
@@ -63,7 +63,8 @@ def build_registry(*, persistent_memory: "PersistentMemory | None" = None) -> To
             instance instead of each creating their own.
 
     Returns:
-        ToolRegistry containing all available tools.
+        ToolRegistry containing built-in tools plus ``mcp_*`` tools from enabled
+        servers in ``mcp_user_config.json`` (see MCP settings API).
     """
     from src.tools.remember_tool import RememberTool
 
@@ -79,6 +80,20 @@ def build_registry(*, persistent_memory: "PersistentMemory | None" = None) -> To
                 registry.register(cls())
         except Exception as exc:
             logger.warning("Failed to register tool %s: %s", cls.name, exc)
+
+    # MCP servers (Cursor-style config): expose list_tools results as normal Agent tools (mcp_*).
+    try:
+        from src.tools.mcp_tools import register_mcp_tools
+
+        meta = register_mcp_tools(registry)
+        for w in meta.get("warnings") or []:
+            logger.warning("MCP: %s", w)
+        n = int(meta.get("registered") or 0)
+        if n:
+            logger.info("Registered %s MCP tool(s) for the agent", n)
+    except Exception as exc:
+        logger.warning("MCP tool registration skipped: %s", exc)
+
     return registry
 
 
