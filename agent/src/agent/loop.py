@@ -556,6 +556,13 @@ class AgentLoop:
             args = dict(tc.arguments)
             if "run_dir" not in args and self.memory.run_dir:
                 args["run_dir"] = self.memory.run_dir
+            if tc.name == "subagent":
+                def _subagent_sink(event_name: str, data: Dict[str, Any]) -> None:
+                    row: Dict[str, Any] = {"type": event_name, "parent_iter": iteration, **data}
+                    trace.write(row)
+                    self._emit(event_name, {"parent_iter": iteration, **data})
+
+                args["_subagent_trace"] = _subagent_sink
             self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
             trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})
             runnable.append((tc, args))
@@ -604,6 +611,14 @@ class AgentLoop:
         args = dict(tc.arguments)
         if "run_dir" not in args and self.memory.run_dir:
             args["run_dir"] = self.memory.run_dir
+
+        if tc.name == "subagent":
+            def _subagent_sink(event_name: str, data: Dict[str, Any]) -> None:
+                row: Dict[str, Any] = {"type": event_name, "parent_iter": iteration, **data}
+                trace.write(row)
+                self._emit(event_name, {"parent_iter": iteration, **data})
+
+            args["_subagent_trace"] = _subagent_sink
 
         self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "args": {k: str(v)[:200] for k, v in args.items()}})

@@ -46,6 +46,9 @@ Decide which workflow to use based on the request:
 - Call `run_swarm(prompt="<user's full request>")` — it auto-selects the right preset.
 - Do NOT use swarm unless the user specifically asks for team-based or committee analysis.
 
+**Subagent** — user wants isolated side research without polluting the main thread (not a full swarm):
+- Call `subagent(prompt="...")` — fresh context, same filesystem/run_dir; use for parallel exploration or heavy tool noise.
+
 **Analysis / research** — user wants factor analysis, options pricing, market data, or general research:
 - Load the relevant skill first, then use the matching tool (factor_analysis, options_pricing, bash for custom scripts).
 
@@ -60,6 +63,7 @@ Decide which workflow to use based on the request:
 - All file paths are relative to run_dir (auto-injected).
 - Respond in the same language the user used.
 - You have persistent cross-session memory (`remember` tool). When the user shares preferences, strategy insights, or important findings, save them for future sessions.
+- For multi-step plans with optional dependencies, use `task_create`, `task_update`, `task_list`, and `task_get` (tasks persist under the agent `.tasks` store).
 - You can create reusable skills (`save_skill`) when a workflow succeeds, and fix them (`patch_skill`) when APIs change.
 {memory_section}
 ## Current Date & Time
