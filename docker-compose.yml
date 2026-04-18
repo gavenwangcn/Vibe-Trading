@@ -24,7 +24,7 @@ services:
       - .env
     environment:
       # 覆盖 .env 中可能指向宿主机的地址，确保容器内访问 API
-      VIBE_TRADING_BASE_URL: http://vibe-trading:8899
+      VIBE_TRADING_BASE_URL: http://156.254.6.224:8899
       WECHAT_BRIDGE_STATE_FILE: /data/state.json
       WECHATBOT_STORAGE_DIR: /data/wechatbot
       WECHAT_INSTANCE_NAME: ${WECHAT_INSTANCE_NAME:-default}
