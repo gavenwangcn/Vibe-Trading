@@ -1,18 +1,29 @@
 /**
- * 工具事件通知：仅在 tool_result 时发一条微信（不再单独发 tool_call）。
+ * 微信工具通知：在 tool_call 时发送（开始执行即发），tool_result 不再发消息。
  *
- * 说明：微信协议下无法编辑已发送消息；merge 模式将短时间内的多条结果合并为一条。
+ * merge：短时多次 tool_call 合并为一条；each：每次调用一条；
+ * result_only：仅工具名，不含参数预览（更短）。
  */
 
 import type { RunTurnHandlers } from './vibe.js'
 
 export type ToolDisplayMode = 'each' | 'merge' | 'result_only'
 
-/** 单条：⚙️ + 成功/失败 + 工具名 + 耗时 */
-function fmtResultLine(tool: string, status: string, elapsedMs?: number): string {
-  const ok = status === 'ok'
-  const sec = elapsedMs != null ? ` ${(elapsedMs / 1000).toFixed(1)}s` : ''
-  return `⚙️ ${ok ? '✓' : '✗'} ${tool}${sec}`.slice(0, 280)
+/** 工具名 + 可选参数预览（不含前缀图标，便于 merge 拼接） */
+function fmtToolInner(tool: string, args: Record<string, string> | undefined, minimal: boolean): string {
+  if (minimal) return tool.slice(0, 220)
+  const preview = args
+    ? Object.entries(args)
+        .slice(0, 1)
+        .map(([k]) => `${k}=…`)
+        .join(' ')
+    : ''
+  const tail = preview ? ` (${preview})` : ''
+  return `${tool}${tail}`.slice(0, 220)
+}
+
+function wrapLine(inner: string): string {
+  return `⚙️ ${inner}`.slice(0, 280)
 }
 
 export function createToolHandlers(
@@ -20,48 +31,49 @@ export function createToolHandlers(
   batchMs: number,
   reply: (text: string) => Promise<void>,
 ): { handlers: RunTurnHandlers; flushPending: () => Promise<void> } {
+  const minimal = mode === 'result_only'
+
   if (mode === 'each' || mode === 'result_only') {
     return {
       handlers: {
-        onToolResult: async ({ tool, status, elapsed_ms: elapsedMs }) => {
-          await reply(fmtResultLine(tool, status, elapsedMs))
+        onToolCall: async ({ tool, arguments: args }) => {
+          const inner = fmtToolInner(tool, args, minimal)
+          await reply(wrapLine(inner))
         },
       },
       flushPending: async () => {},
     }
   }
 
-  const resultLines: string[] = []
-  let resultTimer: ReturnType<typeof setTimeout> | null = null
+  const parts: string[] = []
+  let callTimer: ReturnType<typeof setTimeout> | null = null
 
-  const flushResults = async (): Promise<void> => {
-    if (resultTimer) {
-      clearTimeout(resultTimer)
-      resultTimer = null
+  const flushCalls = async (): Promise<void> => {
+    if (callTimer) {
+      clearTimeout(callTimer)
+      callTimer = null
     }
-    if (!resultLines.length) return
-    const text =
-      resultLines.length === 1
-        ? resultLines[0]
-        : `📋 ${resultLines.join('\n')}`.slice(0, 900)
-    resultLines.length = 0
-    await reply(text)
+    if (!parts.length) return
+    const inner =
+      parts.length === 1 ? parts[0] : parts.join(' · ').slice(0, 900)
+    parts.length = 0
+    await reply(wrapLine(inner))
   }
 
-  const scheduleResults = (): void => {
-    if (resultTimer) clearTimeout(resultTimer)
-    resultTimer = setTimeout(() => void flushResults(), batchMs)
+  const scheduleCalls = (): void => {
+    if (callTimer) clearTimeout(callTimer)
+    callTimer = setTimeout(() => void flushCalls(), batchMs)
   }
 
   return {
     handlers: {
-      onToolResult: async ({ tool, status, elapsed_ms: elapsedMs }) => {
-        resultLines.push(fmtResultLine(tool, status, elapsedMs))
-        scheduleResults()
+      onToolCall: async ({ tool, arguments: args }) => {
+        parts.push(fmtToolInner(tool, args, false))
+        scheduleCalls()
       },
     },
     flushPending: async () => {
-      await flushResults()
+      await flushCalls()
     },
   }
 }

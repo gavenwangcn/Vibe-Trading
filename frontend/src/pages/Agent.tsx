@@ -526,6 +526,12 @@ export function Agent() {
   const runPrompt = async (overrideText?: string, retryImageUrls?: string[]) => {
     if (status === "streaming") return;
 
+    const cmdOnly = (overrideText ?? input).trim();
+    if (/^\/new$/i.test(cmdOnly) || /^\/新会话$/i.test(cmdOnly)) {
+      toast.info(t.webNoNewCommand);
+      return;
+    }
+
     let finalPrompt = (overrideText ?? input).trim();
 
     // Swarm mode: let agent auto-select the right preset

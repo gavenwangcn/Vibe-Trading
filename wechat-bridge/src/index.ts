@@ -42,12 +42,16 @@ const WECHAT_TOOL_DISPLAY: ToolDisplayMode = ['each', 'merge', 'result_only'].in
   : 'merge'
 const TOOL_BATCH_MS = Number(process.env.WECHAT_TOOL_BATCH_MS ?? 550)
 
-/** 创建 Vibe 会话标题前缀（网页端会话列表可见）；默认 Trading Agent，避免与第三方品牌混淆 */
+/** 登录二维码提示等 UI 文案 */
 const SESSION_TITLE_PREFIX = (process.env.WECHAT_SESSION_TITLE_PREFIX ?? 'Trading Agent').trim() || 'Trading Agent'
 
-function sessionTitle(suffix: string): string {
+/** 侧栏「全微信」分组：会话标题需以此前缀开头（与前端 Layout isWeChatSession 一致） */
+const WECHAT_SIDEBAR_GROUP_PREFIX =
+  (process.env.WECHAT_SIDEBAR_GROUP_TITLE_PREFIX ?? 'WeChat').trim() || 'WeChat'
+
+function wechatListTitle(suffix: string): string {
   const s = suffix.trim()
-  return s ? `${SESSION_TITLE_PREFIX} · ${s}` : SESSION_TITLE_PREFIX
+  return s ? `${WECHAT_SIDEBAR_GROUP_PREFIX} · ${s}` : WECHAT_SIDEBAR_GROUP_PREFIX
 }
 
 function resolveLogLevel(): LogLevel {
@@ -85,10 +89,12 @@ function buildHelpText(): string {
   return `${capabilityIntro()}
 
 可用指令：
-/new 或 /新会话 — 开始新的 Vibe-Trading 会话（与网页端会话列表并列、独立）
+/new 或 /新会话 — 仅在微信内使用：开始新会话（侧栏「全微信」分组）
 /help 或 /介绍 — 显示本说明
 
-直接发文字或图片等即与交易助手（Trading Agent）对话。`
+网页端请用侧栏 Sessions 旁的 + 新建会话，勿输入 /new。
+
+直接发文字或图片等即与助手对话。`
 }
 
 /** 与已流式文本去重后的正文（若无剩余则空串） */
@@ -151,7 +157,7 @@ async function replyPlain(
 async function ensureSession(userId: string, label: string): Promise<string> {
   let sid = await getSessionForUser(statePath, userId)
   if (!sid) {
-    sid = await createSession(baseUrl, sessionTitle(label))
+    sid = await createSession(baseUrl, wechatListTitle(label))
     await setSessionForUser(statePath, userId, sid)
   }
   return sid
@@ -166,7 +172,7 @@ async function handleNewSession(
   msg: IncomingMessage,
   userId: string,
 ): Promise<void> {
-  const sid = await createSession(baseUrl, sessionTitle(msg.userId.slice(0, 8)))
+  const sid = await createSession(baseUrl, wechatListTitle(msg.userId.slice(0, 8)))
   await setSessionForUser(statePath, userId, sid)
   await replyPlain(bot, msg, '已开始新会话，可直接发消息对话。', 'new-session')
 }

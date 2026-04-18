@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
+import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, PlugZap, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -21,6 +21,13 @@ function isWeChatSession(s: SessionItem): boolean {
   if (!title) return false;
   if (/^wechat\b/i.test(title)) return true;
   return /微信/.test(title);
+}
+
+function sessionTimeMs(s: SessionItem): number {
+  const raw = s.updated_at || s.created_at;
+  if (!raw) return 0;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
 }
 
 function SessionRow({
@@ -165,6 +172,7 @@ function SessionGroup({
 
 export function Layout() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { t } = useI18n();
   const { dark, toggle } = useDarkMode();
@@ -192,19 +200,31 @@ export function Layout() {
   const isAgentPage = pathname.startsWith("/agent");
   useEffect(() => { loadSessions(); }, [isAgentPage, activeSessionId]);
 
+  useEffect(() => {
+    const onRefresh = () => {
+      api.listSessions()
+        .then((list) => setSessions(Array.isArray(list) ? list : []))
+        .catch(() => {});
+    };
+    window.addEventListener("vibe-sessions-refresh", onRefresh);
+    return () => window.removeEventListener("vibe-sessions-refresh", onRefresh);
+  }, []);
+
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [openWeChat, setOpenWeChat] = useState(false);
-  const [openOther, setOpenOther] = useState(false);
 
-  const { wechatSessions, otherSessions } = useMemo(() => {
+  const { wechatSessionsSorted, webSessionsSorted } = useMemo(() => {
     const wechat: SessionItem[] = [];
-    const other: SessionItem[] = [];
+    const web: SessionItem[] = [];
     for (const s of sessions) {
-      (isWeChatSession(s) ? wechat : other).push(s);
+      (isWeChatSession(s) ? wechat : web).push(s);
     }
-    return { wechatSessions: wechat, otherSessions: other };
+    const byTimeDesc = (a: SessionItem, b: SessionItem) => sessionTimeMs(b) - sessionTimeMs(a);
+    wechat.sort(byTimeDesc);
+    web.sort(byTimeDesc);
+    return { wechatSessionsSorted: wechat, webSessionsSorted: web };
   }, [sessions]);
 
   const deleteSession = async (sid: string) => {
@@ -222,6 +242,11 @@ export function Layout() {
       setSessions((prev) => prev.map((s) => s.session_id === sid ? { ...s, title: renameValue.trim() } : s));
     } catch { /* ignore */ }
     setRenameTarget(null);
+  };
+
+  /** 与原先一致：仅进入 Agent 空白对话，首次发送消息时再创建 session */
+  const handleNewChat = () => {
+    navigate("/agent");
   };
 
   return (
@@ -286,13 +311,14 @@ export function Layout() {
                 <MessageSquare className="h-3.5 w-3.5" />
                 {t.sessions}
               </span>
-              <Link
-                to="/agent"
+              <button
+                type="button"
+                onClick={handleNewChat}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 title={t.newChat}
               >
                 <Plus className="h-3.5 w-3.5" />
-              </Link>
+              </button>
             </div>
 
             <div className="px-2 pb-2 space-y-1 overflow-auto flex-1">
@@ -306,16 +332,14 @@ export function Layout() {
                 <p className="px-3 py-2 text-xs text-muted-foreground/60">{t.noSessions}</p>
               ) : (
                 <>
-                  <SessionGroup
-                    label={t.sessionGroupWeChat}
-                    count={wechatSessions.length}
-                    open={openWeChat}
-                    onToggle={() => setOpenWeChat((v) => !v)}
-                  >
-                    {wechatSessions.length === 0 ? (
-                      <p className="px-2 py-1 text-[11px] text-muted-foreground/60">{t.sessionGroupEmpty}</p>
-                    ) : (
-                      wechatSessions.map((s) => (
+                  {wechatSessionsSorted.length > 0 && (
+                    <SessionGroup
+                      label={t.sessionGroupWeChat}
+                      count={wechatSessionsSorted.length}
+                      open={openWeChat}
+                      onToggle={() => setOpenWeChat((v) => !v)}
+                    >
+                      {wechatSessionsSorted.map((s) => (
                         <SessionRow
                           key={s.session_id}
                           s={s}
@@ -330,19 +354,17 @@ export function Layout() {
                           deleteSession={deleteSession}
                           t={t}
                         />
-                      ))
-                    )}
-                  </SessionGroup>
-                  <SessionGroup
-                    label={t.sessionGroupOther}
-                    count={otherSessions.length}
-                    open={openOther}
-                    onToggle={() => setOpenOther((v) => !v)}
-                  >
-                    {otherSessions.length === 0 ? (
-                      <p className="px-2 py-1 text-[11px] text-muted-foreground/60">{t.sessionGroupEmpty}</p>
-                    ) : (
-                      otherSessions.map((s) => (
+                      ))}
+                    </SessionGroup>
+                  )}
+                  {webSessionsSorted.length > 0 && (
+                    <div
+                      className={cn(
+                        "space-y-0.5",
+                        wechatSessionsSorted.length > 0 && "mt-1.5 pt-1.5 border-t border-border/50",
+                      )}
+                    >
+                      {webSessionsSorted.map((s) => (
                         <SessionRow
                           key={s.session_id}
                           s={s}
@@ -357,9 +379,9 @@ export function Layout() {
                           deleteSession={deleteSession}
                           t={t}
                         />
-                      ))
-                    )}
-                  </SessionGroup>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -76,6 +76,8 @@ const messages = {
   sessionGroupWeChat: "全微信",
   sessionGroupOther: "其他",
   sessionGroupEmpty: "暂无会话",
+  newChatCreateFailed: "新建会话失败，请稍后重试",
+  webNoNewCommand: "网页端请使用左侧 Sessions 旁的 + 新建会话，不要使用 /new。",
   viewDetails: "View Details",
   fullReport: "Full Report →",
   strategyComparison: "Strategy Comparison",
