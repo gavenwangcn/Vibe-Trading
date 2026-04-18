@@ -85,7 +85,7 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
                   key={i}
                   src={url}
                   alt=""
-                  className="max-h-40 max-w-full rounded-lg border border-primary-foreground/20 object-contain"
+                  className="max-h-[min(70vh,720px)] max-w-full rounded-lg border border-primary-foreground/20 object-contain"
                 />
               ))}
             </div>

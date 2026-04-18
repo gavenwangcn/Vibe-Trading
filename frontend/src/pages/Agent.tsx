@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, CheckCircle2, Square, Download, Plus, Paperclip, X, Users, ImagePlus } from "lucide-react";
+import { Send, Loader2, ArrowDown, CheckCircle2, Square, Download, Plus, Paperclip, X, Users, ImagePlus, User } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
@@ -41,6 +41,15 @@ const act = () => useAgentStore.getState();
 
 const MAX_CHAT_IMAGES = 5;
 
+/** 部分系统/浏览器下本地文件 `type` 为空，仅靠 `image/*` 会筛掉所有文件导致无缩略图 */
+const IMAGE_FILE_NAME_RE = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|svg)$/i;
+
+function isImageFile(file: File): boolean {
+  const t = (file.type ?? "").toLowerCase();
+  if (t.startsWith("image/")) return true;
+  return IMAGE_FILE_NAME_RE.test(file.name);
+}
+
 function extractImageUrlsFromMetadata(meta: Record<string, unknown> | undefined): string[] | undefined {
   const uc = meta?.user_content;
   if (!Array.isArray(uc)) return undefined;
@@ -66,7 +75,12 @@ export function Agent() {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const lastEventRef = useRef(0);
 
-  const [attachment, setAttachment] = useState<{ filename: string; filePath: string } | null>(null);
+  const [attachment, setAttachment] = useState<{
+    filename: string;
+    filePath: string;
+    /** 上传前生成的预览（仅图片类文件） */
+    previewDataUrl?: string;
+  } | null>(null);
   const [pendingImages, setPendingImages] = useState<Array<{ id: string; dataUrl: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
@@ -540,20 +554,32 @@ export function Agent() {
       finalPrompt = `[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n${finalPrompt}`;
     }
 
+    const extraImageUrls: string[] = [];
     if (attachment) {
-      finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
+      if (attachment.previewDataUrl) {
+        extraImageUrls.push(attachment.previewDataUrl);
+      } else {
+        finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
+      }
       setAttachment(null);
     }
 
-    const imageUrls = retryImageUrls ?? pendingImages.map((p) => p.dataUrl);
-    if (!finalPrompt && imageUrls.length === 0) return;
+    const imageUrls = [
+      ...extraImageUrls,
+      ...(retryImageUrls ?? pendingImages.map((p) => p.dataUrl)),
+    ];
+    if (!finalPrompt.trim() && imageUrls.length === 0) return;
+
+    const visionDefaultText =
+      finalPrompt.trim() ||
+      (imageUrls.length > 1 ? "请依次理解以下图片并回答。" : "请理解图片内容并回答。");
 
     setInput("");
     setPendingImages([]);
     act().addMessage({
       id: "",
       type: "user",
-      content: finalPrompt,
+      content: finalPrompt.trim() || visionDefaultText,
       ...(imageUrls.length ? { imageUrls } : {}),
       timestamp: Date.now(),
     });
@@ -564,7 +590,8 @@ export function Agent() {
     let payload: string | OpenAIUserContentPart[];
     if (imageUrls.length > 0) {
       const parts: OpenAIUserContentPart[] = [];
-      if (finalPrompt) parts.push({ type: "text", text: finalPrompt });
+      // 纯图无字时也必须带 text，否则部分模型/网关对「仅 image_url parts」不触发正常补全
+      parts.push({ type: "text", text: visionDefaultText });
       for (const url of imageUrls) {
         parts.push({ type: "image_url", image_url: { url } });
       }
@@ -584,10 +611,16 @@ export function Agent() {
       }
       setupSSE(sid);
       await api.sendMessage(sid, payload);
-    } catch {
+    } catch (err) {
       act().setStatus("error");
-      toast.error(t.sendFailed);
-      act().addMessage({ id: "", type: "error", content: t.sendFailed, timestamp: Date.now() });
+      const detail = err instanceof Error ? err.message : String(err);
+      toast.error(`${t.sendFailed}${detail ? `: ${detail}` : ""}`);
+      act().addMessage({
+        id: "",
+        type: "error",
+        content: `${t.sendFailed}${detail ? `: ${detail}` : ""}`,
+        timestamp: Date.now(),
+      });
     }
   };
 
@@ -677,9 +710,21 @@ export function Agent() {
     }
     setUploading(true);
     setShowUploadMenu(false);
+    let previewDataUrl: string | undefined;
+    if (isImageFile(file)) {
+      try {
+        previewDataUrl = await fileToImageDataUrl(file);
+      } catch {
+        /* 预览失败仍继续上传 */
+      }
+    }
     try {
       const result = await api.uploadFile(file);
-      setAttachment({ filename: result.filename, filePath: result.file_path });
+      setAttachment({
+        filename: result.filename,
+        filePath: result.file_path,
+        ...(previewDataUrl ? { previewDataUrl } : {}),
+      });
       toast.success(`Uploaded: ${result.filename}`);
     } catch (err) {
       toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -692,7 +737,7 @@ export function Agent() {
     const files = e.target.files;
     if (!files?.length) return;
     e.target.value = "";
-    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    const list = Array.from(files).filter(isImageFile);
     if (list.length < files.length) toast.error("已跳过非图片文件");
     const newItems: Array<{ id: string; dataUrl: string }> = [];
     for (const file of list) {
@@ -733,6 +778,18 @@ export function Agent() {
     }
   }, [showUploadMenu]);
 
+  const showComposeDraft =
+    pendingImages.length > 0 || !!attachment?.previewDataUrl;
+
+  useEffect(() => {
+    if (!showComposeDraft) return;
+    const id = requestAnimationFrame(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [showComposeDraft, pendingImages, attachment?.previewDataUrl]);
+
   const groups = useMemo(() => groupMessages(messages), [messages]);
 
   return (
@@ -752,7 +809,9 @@ export function Agent() {
               ))}
             </div>
           )}
-          {!sessionLoading && messages.length === 0 && <WelcomeScreen onExample={runPrompt} />}
+          {!sessionLoading && messages.length === 0 && !showComposeDraft && (
+            <WelcomeScreen onExample={runPrompt} />
+          )}
 
           {groups.map((g, i) => {
             if (g.kind === "timeline") {
@@ -782,6 +841,60 @@ export function Agent() {
               </div>
             );
           })}
+
+          {showComposeDraft && (
+            <div className="flex justify-end gap-3">
+              <div className="max-w-[min(100%,36rem)] w-full rounded-2xl rounded-tr-sm border border-dashed border-primary/35 bg-muted/15 px-4 py-3 text-sm">
+                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
+                  待发送
+                </div>
+                <div className="space-y-3">
+                  {attachment?.previewDataUrl && (
+                    <div className="relative group/draftimg">
+                      <img
+                        src={attachment.previewDataUrl}
+                        alt=""
+                        className="w-full max-h-[min(70vh,720px)] object-contain rounded-lg border border-border/80 bg-background/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setAttachment(null)}
+                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-background/90 border border-border text-muted-foreground hover:text-destructive flex items-center justify-center shadow-sm"
+                        title="移除"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {pendingImages.map((p) => (
+                    <div key={p.id} className="relative group/draftimg">
+                      <img
+                        src={p.dataUrl}
+                        alt=""
+                        className="w-full max-h-[min(70vh,720px)] object-contain rounded-lg border border-border/80 bg-background/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removePendingImage(p.id)}
+                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-background/90 border border-border text-muted-foreground hover:text-destructive flex items-center justify-center shadow-sm"
+                        title="移除"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {input.trim() ? (
+                  <div className="mt-3 pt-3 border-t border-border/60 text-foreground whitespace-pre-wrap leading-relaxed">
+                    {input}
+                  </div>
+                ) : null}
+              </div>
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                <User className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </div>
+          )}
 
           {/* Live streaming area: text + tool status */}
           {(streamingText || (status === "streaming" && toolCalls.length > 0)) && (
@@ -838,33 +951,16 @@ export function Agent() {
               </span>
             </div>
           )}
-          {/* Attachment badge */}
-          {attachment && (
-            <div className="flex items-center gap-1">
+          {/* 非图片附件：仅显示文件名；图片在上方对话区展示 */}
+          {attachment && !attachment.previewDataUrl && (
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-medium">
-                <Paperclip className="h-3 w-3" />
-                {attachment.filename}
-                <button type="button" onClick={() => setAttachment(null)} className="hover:text-destructive transition-colors">
+                <Paperclip className="h-3 w-3 shrink-0" />
+                <span className="truncate max-w-[200px]">{attachment.filename}</span>
+                <button type="button" onClick={() => setAttachment(null)} className="hover:text-destructive transition-colors shrink-0">
                   <X className="h-3 w-3" />
                 </button>
               </span>
-            </div>
-          )}
-          {pendingImages.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {pendingImages.map((p) => (
-                <div key={p.id} className="relative group/img inline-block">
-                  <img src={p.dataUrl} alt="" className="h-16 w-16 object-cover rounded-lg border border-border" />
-                  <button
-                    type="button"
-                    onClick={() => removePendingImage(p.id)}
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border text-muted-foreground hover:text-destructive flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
-                    title="移除"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
             </div>
           )}
           {/* Uploading indicator */}
@@ -977,7 +1073,11 @@ export function Agent() {
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim() && !attachment && pendingImages.length === 0}
+                disabled={
+                  !input.trim() &&
+                  !attachment &&
+                  pendingImages.length === 0
+                }
                 className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
                 <Send className="h-4 w-4" />
