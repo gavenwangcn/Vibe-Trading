@@ -51,8 +51,13 @@
 
 ## 📰 뉴스
 
+- **2026-04-17** 📊 **거래 명세서 분석기 + 유니버설 파일 리더**: 증권사 거래 명세서(同花顺/东财/富途/일반 CSV) 업로드 → 거래 프로필(보유 일수, 승률, 손익비, 최대 드로다운) + 4가지 행동 편향 진단(처분 효과, 과잉 거래, 추격 매수, 앵커링) 자동 생성. `read_document`는 이제 PDF, Word, Excel, PowerPoint, 이미지(OCR), 40+ 텍스트 형식을 하나의 호출로 통합 처리.
 - **2026-04-16** 🧠 **에이전트 하네스**: 크로스세션 영구 메모리, FTS5 세션 검색, 자가 진화 스킬(전체 CRUD), 5계층 컨텍스트 압축, 읽기/쓰기 도구 배치 처리. 27개 도구, 107개 신규 테스트.
 - **2026-04-15** 🤖 **Z.ai + MiniMax**: Z.ai 제공자 추가([#35](https://github.com/HKUDS/Vibe-Trading/pull/35)), MiniMax temperature 수정 + 모델 업데이트([#33](https://github.com/HKUDS/Vibe-Trading/pull/33)). 13개 제공자.
+
+<details>
+<summary>이전 뉴스</summary>
+
 - **2026-04-14** 🔧 **MCP 안정성**: 백테스트 도구의 stdio 전송에서 `Connection closed` 오류 수정([#32](https://github.com/HKUDS/Vibe-Trading/pull/32)).
 - **2026-04-13** 🌐 **크로스마켓 복합 백테스트**: 새 `CompositeEngine`으로 서로 다른 시장 종목(예: A주 + 암호화폐)을 공유 자금 풀로 동시 백테스트, 시장 규칙은 종목별 적용. Swarm 템플릿 변수 폴백 및 프론트엔드 타임아웃도 수정.
 - **2026-04-12** 🌍 **멀티 플랫폼 내보내기**: `/pine`으로 TradingView (Pine Script v6), TDX (통달신/동화순/동방재부), MetaTrader 5 (MQL5) 한 번에 내보내기.
@@ -60,6 +65,8 @@
 - **2026-04-10** 📦 **v0.1.4**: Docker 수정([#8](https://github.com/HKUDS/Vibe-Trading/issues/8)), `web_search` MCP 도구, 12개 LLM 제공자, `akshare`/`ccxt` 의존성. PyPI와 ClawHub에 게시.
 - **2026-04-09** 📊 **Backtest Wave 2**: ChinaFutures, GlobalFutures, Forex, Options v2 엔진. 몬테카를로, Bootstrap CI, 워크포워드 검증.
 - **2026-04-08** 🔧 **다중 시장 백테스트**: 시장별 규칙, Pine Script v6 내보내기, 자동 폴백 5개 데이터 소스.
+
+</details>
 
 ---
 
@@ -310,6 +317,18 @@ npx clawhub@latest install vibe-trading --force
 <sub>* Ollama는 API 키가 필요 없습니다.</sub>
 
 **무료 데이터(키 불필요):** AKShare의 A주, yfinance의 HK/US 주식, OKX의 크립토, CCXT의 100+ 크립토 거래소. 시스템이 시장별로 최적 소스를 자동 선택합니다.
+
+### 🎯 권장 모델
+
+Vibe-Trading은 툴 호출에 크게 의존하는 에이전트입니다 — skill, 백테스트, 메모리, swarm이 모두 tool call을 통해 실행됩니다. 모델 선택이 에이전트가 **실제로 툴을 사용하는지**, 아니면 학습 데이터에서 답을 꾸며내는지를 결정합니다.
+
+| 등급 | 예시 | 용도 |
+|------|------|------|
+| **최상** | `anthropic/claude-opus-4.7`, `anthropic/claude-sonnet-4.6`, `openai/gpt-5.4`, `google/gemini-3.1-pro-preview` | 복잡한 swarm(3+ 에이전트), 긴 연구 세션, 논문급 분석 |
+| **가성비**(기본값) | `deepseek/deepseek-v3.2`, `x-ai/grok-4.20`, `z-ai/glm-5.1`, `moonshotai/kimi-k2.5`, `qwen/qwen3-max-thinking` | 일상 사용 — 안정적인 tool-calling, 비용 약 1/10 |
+| **에이전트용으로 피할 것** | `*-nano`, `*-flash-lite`, `*-coder-next`, 소형 / 증류 버전 | tool-calling 불안정 — skill 로드나 backtest 실행 대신 "기억으로 답변" |
+
+기본 `agent/.env.example`은 `deepseek/deepseek-v3.2` 사용 — 가성비 등급에서 가장 저렴한 옵션.
 
 ---
 

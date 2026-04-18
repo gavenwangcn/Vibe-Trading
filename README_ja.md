@@ -51,8 +51,13 @@
 
 ## 📰 ニュース
 
+- **2026-04-17** 📊 **取引明細アナライザー + ユニバーサルファイルリーダー**: ブローカーの取引明細（同花順/東方財富/富途/汎用CSV）をアップロード → 取引プロフィール（保有日数、勝率、損益比、最大ドローダウン）+ 4つの行動バイアス診断（処分効果、過剰取引、追随買い、アンカリング）を自動生成。`read_document`はPDF、Word、Excel、PowerPoint、画像（OCR）、40+テキスト形式を1回の呼び出しで統一処理。
 - **2026-04-16** 🧠 **エージェントハーネス**: クロスセッション永続メモリ、FTS5セッション検索、自己進化スキル（完全CRUD）、5層コンテキスト圧縮、読み書きツールバッチ処理。27ツール、107新テスト。
 - **2026-04-15** 🤖 **Z.ai + MiniMax**: Z.aiプロバイダー追加（[#35](https://github.com/HKUDS/Vibe-Trading/pull/35)）、MiniMax temperature修正+モデル更新（[#33](https://github.com/HKUDS/Vibe-Trading/pull/33)）。13プロバイダー対応。
+
+<details>
+<summary>過去のニュース</summary>
+
 - **2026-04-14** 🔧 **MCP安定性**: バックテストツールのstdioトランスポートにおける`Connection closed`エラーを修正（[#32](https://github.com/HKUDS/Vibe-Trading/pull/32)）。
 - **2026-04-13** 🌐 **クロスマーケット複合バックテスト**: 新`CompositeEngine`で異なる市場の銘柄（例：A株＋暗号資産）を共有資金プールで同時バックテスト、市場ルールは銘柄ごとに適用。Swarmテンプレート変数フォールバックとフロントエンドタイムアウトも修正。
 - **2026-04-12** 🌍 **マルチプラットフォーム出力**: `/pine`でTradingView (Pine Script v6)、TDX（通達信/同花順/東方財富）、MetaTrader 5 (MQL5) に一括エクスポート。
@@ -60,6 +65,8 @@
 - **2026-04-10** 📦 **v0.1.4**: Docker修正（[#8](https://github.com/HKUDS/Vibe-Trading/issues/8)）、`web_search` MCPツール、12 LLMプロバイダー、`akshare`/`ccxt`依存追加。PyPIとClawHubに公開。
 - **2026-04-09** 📊 **Backtest Wave 2**: ChinaFutures、GlobalFutures、Forex、Options v2エンジン追加。モンテカルロ、Bootstrap CI、ウォークフォワード検証。
 - **2026-04-08** 🔧 **マルチマーケットバックテスト**: 市場別ルール、Pine Script v6エクスポート、自動フォールバック付き5データソース。
+
+</details>
 
 ---
 
@@ -310,6 +317,18 @@ npx clawhub@latest install vibe-trading --force
 <sub>* OllamaはAPIキー不要。</sub>
 
 **無料データ（キー不要）:** AKShare経由のA株、yfinance経由のHK/US株式、OKX経由の暗号、CCXT経由の100+暗号取引所。市場ごとに最適なソースを自動選択。
+
+### 🎯 推奨モデル
+
+Vibe-Tradingはツール呼び出しに大きく依存するエージェントです — skill・バックテスト・メモリ・swarmはすべてtool callで動作します。モデル選択が、エージェントが**実際にツールを使う**か、訓練データから答えを捏造するかを直接決定します。
+
+| 層 | 例 | 用途 |
+|----|-----|------|
+| **ベスト** | `anthropic/claude-opus-4.7`、`anthropic/claude-sonnet-4.6`、`openai/gpt-5.4`、`google/gemini-3.1-pro-preview` | 複雑なswarm（3+エージェント）、長い研究セッション、論文レベル分析 |
+| **コスパ**（デフォルト） | `deepseek/deepseek-v3.2`、`x-ai/grok-4.20`、`z-ai/glm-5.1`、`moonshotai/kimi-k2.5`、`qwen/qwen3-max-thinking` | 日常利用 — tool-callingが安定、コスト約1/10 |
+| **エージェント用途では非推奨** | `*-nano`、`*-flash-lite`、`*-coder-next`、小型 / 蒸留版 | tool-callingが不安定 — skillのロードやbacktest実行をせず「記憶で回答」してしまう |
+
+デフォルトの `agent/.env.example` は `deepseek/deepseek-v3.2` — コスパ層の最安オプション。
 
 ---
 
