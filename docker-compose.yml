@@ -3,8 +3,10 @@ services:
     build: .
     ports:
       - "8899:8899"
+    # 仅使用 agent/.env（仓库根目录不设 .env）
     env_file:
-      - .env
+      - path: agent/.env
+        required: false
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
@@ -17,18 +19,19 @@ services:
     build:
       context: .
       dockerfile: wechat-bridge/Dockerfile
-    # 多微信：宿主机目录 {WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → /data
-    # 需要固定容器名（如 a）时可在 .env 设置 WECHAT_CONTAINER_NAME，且多实例并行时用不同 compose -p 或不同容器名
+    # 仅使用 wechat-bridge/.env（与 agent/.env 分离，勿混用）
     env_file:
-      - .env
+      - path: wechat-bridge/.env
+        required: false
+    # 覆盖桥接 .env 中可能指向宿主机的 API 地址，保证同网络内访问 vibe-trading
     environment:
-      # 覆盖 .env 中可能指向宿主机的地址，确保容器内访问 API
-      VIBE_TRADING_BASE_URL: http://156.254.6.224:8899
+      VIBE_TRADING_BASE_URL: http://vibe-trading:8899
       WECHAT_BRIDGE_STATE_FILE: /data/state.json
       WECHATBOT_STORAGE_DIR: /data/wechatbot
       WECHAT_INSTANCE_NAME: ${WECHAT_INSTANCE_NAME:-default}
     volumes:
       # 宿主机：{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → 容器 /data（微信凭证、会话映射等）
+      # 插值变量来自「执行 compose 时的环境」或项目根 .env；若不上根 .env，请用默认值或启动前 export。
       - ${WECHAT_DATA_ROOT:-./wechat-instances}/${WECHAT_INSTANCE_NAME:-default}:/data
     depends_on:
       vibe-trading:

@@ -43,6 +43,14 @@ const WECHAT_TOOL_DISPLAY: ToolDisplayMode = ['each', 'merge', 'result_only'].in
   : 'merge'
 const TOOL_BATCH_MS = Number(process.env.WECHAT_TOOL_BATCH_MS ?? 550)
 
+/** 创建 Vibe 会话标题前缀（网页端会话列表可见）；默认 Trading Agent，避免与第三方品牌混淆 */
+const SESSION_TITLE_PREFIX = (process.env.WECHAT_SESSION_TITLE_PREFIX ?? 'Trading Agent').trim() || 'Trading Agent'
+
+function sessionTitle(suffix: string): string {
+  const s = suffix.trim()
+  return s ? `${SESSION_TITLE_PREFIX} · ${s}` : SESSION_TITLE_PREFIX
+}
+
 function resolveLogLevel(): LogLevel {
   const l = (process.env.WECHAT_LOG_LEVEL ?? 'info').trim().toLowerCase()
   if (l === 'debug' || l === 'info' || l === 'warn' || l === 'error' || l === 'silent') return l
@@ -61,14 +69,28 @@ function isNewCommand(text: string): boolean {
 
 function isHelpCommand(text: string): boolean {
   const t = text.trim().toLowerCase()
-  return t === '/help' || t === '/帮助'
+  return t === '/help' || t === '/帮助' || t === '/intro' || t === '/介绍'
 }
 
-const HELP_TEXT = `可用指令：
-/new 或 /新会话 — 开始新的 Vibe-Trading 会话（与网页端会话列表并列、独立）
-/help — 显示本说明
+/** 对话内可见的能力说明（与微信「功能介绍」字段可保持语义一致；后者须在公众平台后台单独填写） */
+const DEFAULT_CAPABILITY_INTRO =
+  '【能力】AI 自动化盯盘、行情与策略解读、回测与组合讨论、交易相关辅助提醒等。输出仅供参考，不构成投资建议。'
 
-直接发文字或图片等即与交易助手对话。`
+function capabilityIntro(): string {
+  const raw = process.env.WECHAT_CAPABILITY_INTRO?.trim()
+  if (raw) return raw.replace(/\\n/g, '\n')
+  return DEFAULT_CAPABILITY_INTRO
+}
+
+function buildHelpText(): string {
+  return `${capabilityIntro()}
+
+可用指令：
+/new 或 /新会话 — 开始新的 Vibe-Trading 会话（与网页端会话列表并列、独立）
+/help 或 /介绍 — 显示本说明
+
+直接发文字或图片等即与交易助手（Trading Agent）对话。`
+}
 
 /** 与已流式文本去重后的正文（若无剩余则空串） */
 function sliceFinalSummary(summary: string, streamedRaw: string): string {
@@ -114,14 +136,14 @@ function createSafeReplier(
 async function ensureSession(userId: string, label: string): Promise<string> {
   let sid = await getSessionForUser(statePath, userId)
   if (!sid) {
-    sid = await createSession(baseUrl, `WeChat ${label}`)
+    sid = await createSession(baseUrl, sessionTitle(label))
     await setSessionForUser(statePath, userId, sid)
   }
   return sid
 }
 
 async function handleHelp(bot: WeChatBot, msg: IncomingMessage): Promise<void> {
-  await bot.reply(msg, HELP_TEXT)
+  await bot.reply(msg, buildHelpText())
 }
 
 async function handleNewSession(
@@ -129,7 +151,7 @@ async function handleNewSession(
   msg: IncomingMessage,
   userId: string,
 ): Promise<void> {
-  const sid = await createSession(baseUrl, `WeChat ${msg.userId.slice(0, 8)}`)
+  const sid = await createSession(baseUrl, sessionTitle(msg.userId.slice(0, 8)))
   await setSessionForUser(statePath, userId, sid)
   await bot.reply(msg, '已开始新会话，可直接发消息对话。')
 }
@@ -281,7 +303,7 @@ async function main(): Promise<void> {
     callbacks: {
       onQrUrl: (url) => {
         qrTerminal.generate(url, { small: true }, (qr: string) => {
-          process.stderr.write('\n  请使用微信扫描以下二维码登录：\n\n')
+          process.stderr.write(`\n  Vibe-Trading · ${SESSION_TITLE_PREFIX} — 请使用微信扫描以下二维码登录：\n\n`)
           for (const line of qr.split('\n')) {
             process.stderr.write(`  ${line}\n`)
           }

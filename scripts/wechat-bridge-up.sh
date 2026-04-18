@@ -123,8 +123,9 @@ if [[ -z "$IMAGE" ]]; then
 fi
 
 RUN_ENV=()
-if [[ -f "$ROOT/.env" ]]; then
-  RUN_ENV+=(--env-file "$ROOT/.env")
+WB_ENV="$ROOT/wechat-bridge/.env"
+if [[ -f "$WB_ENV" ]]; then
+  RUN_ENV+=(--env-file "$WB_ENV")
 fi
 
 # 与 docker-compose.yml 中 wechat-bridge 一致；显式 -e 覆盖 .env 中可能指向宿主机的 API 地址

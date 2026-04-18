@@ -36,6 +36,20 @@
 | `WECHAT_TOOL_NOTIFY` | 是否发送 `tool_call` / `tool_result` 简短提示（`0` 关闭） | 开启 |
 | `WECHAT_TOOL_DISPLAY` | `each` 每条工具一行；`merge` 合并短时多工具（默认）；`result_only` 仅完成后提示 | `merge` |
 | `WECHAT_TOOL_BATCH_MS` | merge 模式下合并窗口（毫秒） | `550` |
+| `WECHAT_SESSION_TITLE_PREFIX` | 同步到 Vibe 会话标题（网页端列表），如 `Trading Agent` | `Trading Agent` |
+| `WECHAT_CAPABILITY_INTRO` | `/help`、`/介绍` 中展示的能力说明；可与公众平台「功能介绍」文案对齐 | 见代码默认段 |
+
+### 微信里的机器人头像、名称与「功能介绍」（clawbot 等）
+
+本仓库与 `@wechatbot/wechatbot` **不提供**修改下列内容的 API；它们由**微信 / iLink 对话开放平台**在云端配置，与扫码登录所用机器人账号绑定：
+
+- **头像**（如默认 clawbot 图标）
+- **对外显示名称**
+- **功能介绍**（添加好友/资料页里的简介文案）
+
+请到该机器人在**微信公众平台 / 微信对话开放平台**对应入口的 **机器人设置 / 基础信息** 中修改，将简介改为与业务一致，例如：**AI 自动化盯盘、行情与策略解读、回测辅助、交易相关提醒等**（请按平台字数限制删减）。
+
+对话内能力与说明文案可通过环境变量 **`WECHAT_CAPABILITY_INTRO`** 自定义；用户发 **`/help`** 或 **`/介绍`** 时会看到（与资料页「功能介绍」需分别在后台与本变量中维护）。
 
 ### 工具提示与流式在微信里的表现
 
@@ -72,7 +86,7 @@ npm run dev
 
 `docker-compose.yml` 位于 `Vibe-Trading/`。`wechat-bridge` 镜像构建上下文为 **`Vibe-Trading` 根目录**（`context: .`），SDK 位于 **`./wechatbot/nodejs/`**，与 compose 同级，无需再在上级目录放一份 `wechatbot`。
 
-1. 在 **`Vibe-Trading/`** 下创建 **`.env`**（与 `docker-compose.yml` 同级）：可先 `cp .env.example .env`，再将 `agent/.env.example` 中的 LLM、数据源等合并进去；若此前只用 `agent/.env`，可执行 **`cp agent/.env .env`**，再按需追加 `.env.example` 里「微信桥」相关变量。
+1. 分别准备环境文件（**不要**混用）：`cp agent/.env.example agent/.env` 并填写 LLM 等；`cp wechat-bridge/.env.example wechat-bridge/.env` 并按需调整微信桥变量。**仓库根目录不需要 `.env`。**
 2. 启动 API + 微信桥：
 
    ```bash
@@ -87,7 +101,7 @@ npm run dev
 
 桥接容器通过 **`environment`** 使用 `VIBE_TRADING_BASE_URL=http://vibe-trading:8899`。宿主机数据目录为 **`{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME}`**（默认 `./wechat-instances/default`），挂载到容器 **`/data`**（含微信凭证 `wechatbot/` 与 `state.json`）。
 
-### 多微信实例（同一镜像、同一 compose、同一份 .env 模板）
+### 多微信实例（同一镜像、同一 compose；数据目录与 `wechat-bridge/.env` 中实例变量配合）
 
 隔离规则：**宿主机 `{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME}/`** 挂载到容器 **`/data`**，微信凭证与桥接 state 均在此子目录下，与其它实例文件隔离。
 
