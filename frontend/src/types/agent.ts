@@ -7,6 +7,8 @@ export interface AgentMessage {
   id: string;
   type: AgentMessageType;
   content: string;
+  /** Data URLs or remote URLs for user turns with images (multimodal). */
+  imageUrls?: string[];
   tool?: string;
   args?: Record<string, string>;
   status?: "running" | "ok" | "error";

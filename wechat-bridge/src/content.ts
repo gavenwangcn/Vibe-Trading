@@ -8,7 +8,42 @@ import { tmpdir } from 'node:os'
 import type { IncomingMessage } from '@wechatbot/wechatbot'
 import type { WeChatBot } from '@wechatbot/wechatbot'
 
+import {
+  bufferToImageDataUrl,
+  guessImageMime,
+  MAX_IMAGE_BYTES,
+  type OpenAIUserContentPart,
+} from './imageDataUrl.js'
 import { uploadFile } from './vibe.js'
+
+/** 发给 /sessions/.../messages 的 content：纯文本或与网页端一致的多模态 parts。 */
+export type VibeUserContent = string | OpenAIUserContentPart[]
+
+/** 与 agent/api_server.py /upload 一致：禁止可执行与压缩包 */
+const BLOCKED_UPLOAD_EXT = new Set([
+  '.exe',
+  '.msi',
+  '.bat',
+  '.cmd',
+  '.com',
+  '.scr',
+  '.app',
+  '.dmg',
+  '.so',
+  '.dll',
+  '.dylib',
+  '.zip',
+  '.rar',
+  '.7z',
+  '.tar',
+  '.gz',
+  '.tgz',
+  '.bz2',
+  '.xz',
+])
+
+/** 与网页端 Agent 上传上限一致 */
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes}B`
@@ -49,7 +84,7 @@ export async function buildVibeUserContent(
   baseUrl: string,
   msg: IncomingMessage,
   bot: WeChatBot,
-): Promise<string> {
+): Promise<VibeUserContent> {
   switch (msg.type) {
     case 'text': {
       const t = msg.text?.trim() ?? ''
@@ -59,14 +94,25 @@ export async function buildVibeUserContent(
     case 'image': {
       const media = await bot.download(msg)
       if (!media) return '[图片无法下载]'
-      try {
-        const up = await uploadFile(baseUrl, media.data, 'wechat-image.jpg')
-        const note = msg.text && msg.text !== '[image]' ? msg.text : '用户从微信发来一张图片，已上传到服务器。'
-        return truncate(`${note}\n本地路径（供工具读取）: ${up.file_path}`)
-      } catch (e) {
-        const err = e instanceof Error ? e.message : String(e)
-        return truncate(`[图片已下载但上传 Vibe 失败: ${err}] 请改用文字描述需求，或在网页端上传。`)
+      if (media.data.length > MAX_IMAGE_BYTES) {
+        return truncate(
+          `图片过大（超过 ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB），请发送较小的图片或压缩后再发。`,
+        )
       }
+      const mime = guessImageMime(media.data)
+      const url = bufferToImageDataUrl(media.data, mime)
+      const parts: OpenAIUserContentPart[] = []
+      const userCaption = msg.text && msg.text !== '[image]' ? msg.text.trim() : ''
+      if (userCaption) {
+        parts.push({ type: 'text', text: truncate(userCaption) })
+      } else {
+        parts.push({
+          type: 'text',
+          text: '用户从微信发来一张图片，请理解图片内容并回复。',
+        })
+      }
+      parts.push({ type: 'image_url', image_url: { url } })
+      return parts
     }
 
     case 'voice': {
@@ -85,7 +131,15 @@ export async function buildVibeUserContent(
       const file = msg.files[0]
       const fileName = file?.fileName ?? 'unknown'
       const fileSize = file?.size ? ` (${formatFileSize(file.size)})` : ''
-      if (TEXT_EXT.has(extname(fileName).toLowerCase())) {
+      const ext = extname(fileName).toLowerCase()
+
+      if (BLOCKED_UPLOAD_EXT.has(ext)) {
+        return truncate(
+          `[文件类型 ${ext} 不允许上传（与网页一致：可执行文件与压缩包不支持，请先解压或换格式）。]`,
+        )
+      }
+
+      if (TEXT_EXT.has(ext)) {
         try {
           const media = await bot.download(msg)
           if (media) {
@@ -97,9 +151,34 @@ export async function buildVibeUserContent(
           /* fall through */
         }
       }
-      return truncate(
-        `[收到文件: ${fileName}${fileSize}。若为文本请让用户粘贴内容或发可下载的纯文本文件。]`,
-      )
+
+      try {
+        const media = await bot.download(msg)
+        if (!media) {
+          return truncate(`[无法下载文件: ${fileName}${fileSize}]`)
+        }
+        if (media.data.length > MAX_UPLOAD_BYTES) {
+          return truncate(`[文件过大（>${MAX_UPLOAD_BYTES / (1024 * 1024)}MB）: ${fileName}]`)
+        }
+        const uploadName = basename(fileName) || `wechat-upload${ext || '.bin'}`
+        const up = await uploadFile(baseUrl, media.data, uploadName)
+        const head = `[Uploaded file: ${fileName}, path: ${up.file_path}]`
+        const userNote =
+          msg.text?.trim() &&
+          msg.text.trim() !== '[file]' &&
+          !/^[\[【]/.test(msg.text.trim())
+            ? msg.text.trim()
+            : ''
+        if (userNote) {
+          return truncate(`${head}\n\n${userNote}`)
+        }
+        return truncate(
+          `${head}\n\n请根据该文件与用户需求处理（可使用 read_document 等工具读取附件）。`,
+        )
+      } catch (e) {
+        const err = e instanceof Error ? e.message : String(e)
+        return truncate(`[文件已收到但上传 Vibe 失败: ${err}] 可尝试在网页端上传同一文件。`)
+      }
     }
 
     case 'video': {

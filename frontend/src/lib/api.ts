@@ -1,5 +1,10 @@
 const BASE = "";
 
+/** OpenAI Chat Completions user message content parts (vision). */
+export type OpenAIUserContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -48,7 +53,12 @@ export const api = {
   createSession: (title?: string) => request<SessionItem>("/sessions", { method: "POST", body: JSON.stringify({ title: title || "" }) }),
   deleteSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "DELETE" }),
   renameSession: (sid: string, title: string) => request<{ status: string }>(`/sessions/${sid}`, { method: "PATCH", body: JSON.stringify({ title }) }),
-  sendMessage: (sid: string, content: string) => request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  /** Plain string or OpenAI multimodal parts (text + image_url). */
+  sendMessage: (sid: string, content: string | OpenAIUserContentPart[]) =>
+    request<{ message_id: string; attempt_id: string }>(`/sessions/${sid}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
   sseUrl: (sid: string) => `${BASE}/sessions/${sid}/events`,

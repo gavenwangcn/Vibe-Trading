@@ -16,12 +16,12 @@ import csv
 import mimetypes
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Security, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import yaml
 from fastapi.middleware.cors import CORSMiddleware
 from rich.console import Console
@@ -162,8 +162,23 @@ class SessionResponse(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    """Send chat message: natural-language strategy description."""
-    content: str = Field(..., description="Natural language strategy description", min_length=1, max_length=5000)
+    """Send chat message: plain text or OpenAI multimodal user content."""
+
+    content: Union[str, List[Dict[str, Any]]] = Field(
+        ...,
+        description='Text string, or OpenAI-style parts: '
+        '[{"type":"text","text":"..."}, {"type":"image_url","image_url":{"url":"data:image/...;base64,..."}}]',
+    )
+
+    @model_validator(mode="after")
+    def _validate_content(self) -> "SendMessageRequest":
+        from src.session.content_utils import validate_user_content
+
+        try:
+            validate_user_content(self.content)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        return self
 
 
 class MessageResponse(BaseModel):

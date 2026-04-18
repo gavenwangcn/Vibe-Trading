@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, CheckCircle2, Square, Download, Plus, Paperclip, X, Users } from "lucide-react";
+import { Send, Loader2, ArrowDown, CheckCircle2, Square, Download, Plus, Paperclip, X, Users, ImagePlus } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
 import { useI18n } from "@/lib/i18n";
-import { api } from "@/lib/api";
+import { api, type OpenAIUserContentPart } from "@/lib/api";
+import { fileToImageDataUrl } from "@/lib/imageCompress";
 import { formatDateShanghaiForFilename, formatDateTimeShanghai } from "@/lib/shanghaiTime";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -38,6 +39,21 @@ function groupMessages(msgs: AgentMessage[]): MsgGroup[] {
 
 const act = () => useAgentStore.getState();
 
+const MAX_CHAT_IMAGES = 5;
+
+function extractImageUrlsFromMetadata(meta: Record<string, unknown> | undefined): string[] | undefined {
+  const uc = meta?.user_content;
+  if (!Array.isArray(uc)) return undefined;
+  const urls: string[] = [];
+  for (const p of uc) {
+    if (p && typeof p === "object" && (p as { type?: string }).type === "image_url") {
+      const url = (p as { image_url?: { url?: string } }).image_url?.url;
+      if (url) urls.push(url);
+    }
+  }
+  return urls.length ? urls : undefined;
+}
+
 /* ---------- Component ---------- */
 export function Agent() {
   const [input, setInput] = useState("");
@@ -51,10 +67,12 @@ export function Agent() {
   const lastEventRef = useRef(0);
 
   const [attachment, setAttachment] = useState<{ filename: string; filePath: string } | null>(null);
+  const [pendingImages, setPendingImages] = useState<Array<{ id: string; dataUrl: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const swarmCancelRef = useRef(false);
   const [swarmDash, setSwarmDash] = useState<SwarmDashboardProps | null>(null);
@@ -134,7 +152,14 @@ export function Agent() {
         const metrics = meta?.metrics as Record<string, number> | undefined;
         const ts = new Date(m.created_at).getTime();
         if (m.role === "user") {
-          agentMsgs.push({ id: m.message_id, type: "user", content: m.content, timestamp: ts });
+          const imageUrls = extractImageUrlsFromMetadata(m.metadata as Record<string, unknown> | undefined);
+          agentMsgs.push({
+            id: m.message_id,
+            type: "user",
+            content: m.content,
+            timestamp: ts,
+            ...(imageUrls ? { imageUrls } : {}),
+          });
         } else if (runId) {
           // Show text answer first (if non-empty), then chart card
           if (m.content && m.content !== "Strategy execution completed.") {
@@ -498,37 +523,61 @@ export function Agent() {
     }
   };
 
-  const runPrompt = async (prompt: string) => {
-    if (!prompt.trim() || status === "streaming") return;
+  const runPrompt = async (overrideText?: string, retryImageUrls?: string[]) => {
+    if (status === "streaming") return;
 
-    let finalPrompt = prompt;
+    let finalPrompt = (overrideText ?? input).trim();
 
     // Swarm mode: let agent auto-select the right preset
     if (swarmPreset) {
       setSwarmPreset(null);
-      finalPrompt = `[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n${prompt}`;
+      finalPrompt = `[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n${finalPrompt}`;
     }
 
     if (attachment) {
       finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
       setAttachment(null);
     }
+
+    const imageUrls = retryImageUrls ?? pendingImages.map((p) => p.dataUrl);
+    if (!finalPrompt && imageUrls.length === 0) return;
+
     setInput("");
-    act().addMessage({ id: "", type: "user", content: finalPrompt, timestamp: Date.now() });
+    setPendingImages([]);
+    act().addMessage({
+      id: "",
+      type: "user",
+      content: finalPrompt,
+      ...(imageUrls.length ? { imageUrls } : {}),
+      timestamp: Date.now(),
+    });
     act().setStatus("streaming");
     forceScrollToBottom();
     inputRef.current?.focus();
 
+    let payload: string | OpenAIUserContentPart[];
+    if (imageUrls.length > 0) {
+      const parts: OpenAIUserContentPart[] = [];
+      if (finalPrompt) parts.push({ type: "text", text: finalPrompt });
+      for (const url of imageUrls) {
+        parts.push({ type: "image_url", image_url: { url } });
+      }
+      payload = parts;
+    } else {
+      payload = finalPrompt;
+    }
+
     try {
       let sid = act().sessionId;
+      const titleHint = finalPrompt.slice(0, 50) || "图片对话";
       if (!sid) {
-        const session = await api.createSession(prompt.slice(0, 50));
+        const session = await api.createSession(titleHint);
         sid = session.session_id;
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      await api.sendMessage(sid, finalPrompt);
+      await api.sendMessage(sid, payload);
     } catch {
       act().setStatus("error");
       toast.error(t.sendFailed);
@@ -536,7 +585,10 @@ export function Agent() {
     }
   };
 
-  const handleSubmit = (e: FormEvent) => { e.preventDefault(); runPrompt(input.trim()); };
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    runPrompt();
+  };
 
   const handleCancel = async () => {
     swarmCancelRef.current = true;
@@ -560,16 +612,17 @@ export function Agent() {
     const msgs = act().messages;
     const errorIdx = msgs.findIndex(m => m.id === errorMsg.id);
     if (errorIdx === -1) return;
-    // Find the most recent user message before this error
-    let userContent: string | null = null;
+    let userText = "";
+    let retryImages: string[] | undefined;
     for (let i = errorIdx - 1; i >= 0; i--) {
       if (msgs[i].type === "user") {
-        userContent = msgs[i].content;
+        userText = msgs[i].content;
+        retryImages = msgs[i].imageUrls;
         break;
       }
     }
-    if (!userContent) return;
-    runPrompt(userContent);
+    if (!userText.trim() && !retryImages?.length) return;
+    runPrompt(userText, retryImages);
   }, [status]);
 
   const handleExport = () => {
@@ -627,6 +680,39 @@ export function Agent() {
     } finally {
       setUploading(false);
     }
+  }, []);
+
+  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files?.length) return;
+    e.target.value = "";
+    const list = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (list.length < files.length) toast.error("已跳过非图片文件");
+    const newItems: Array<{ id: string; dataUrl: string }> = [];
+    for (const file of list) {
+      if (file.size > 25 * 1024 * 1024) {
+        toast.error("单张图片请小于 25MB");
+        continue;
+      }
+      try {
+        const dataUrl = await fileToImageDataUrl(file);
+        newItems.push({ id: `${Date.now()}-${newItems.length}`, dataUrl });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "图片处理失败");
+      }
+    }
+    if (!newItems.length) return;
+    setPendingImages((prev) => {
+      const merged = [...prev, ...newItems].slice(0, MAX_CHAT_IMAGES);
+      if (prev.length + newItems.length > MAX_CHAT_IMAGES) {
+        toast.error(`最多 ${MAX_CHAT_IMAGES} 张图片`);
+      }
+      return merged;
+    });
+  }, []);
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
   useEffect(() => {
@@ -758,6 +844,23 @@ export function Agent() {
               </span>
             </div>
           )}
+          {pendingImages.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {pendingImages.map((p) => (
+                <div key={p.id} className="relative group/img inline-block">
+                  <img src={p.dataUrl} alt="" className="h-16 w-16 object-cover rounded-lg border border-border" />
+                  <button
+                    type="button"
+                    onClick={() => removePendingImage(p.id)}
+                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-background border border-border text-muted-foreground hover:text-destructive flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
+                    title="移除"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {/* Uploading indicator */}
           {uploading && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -778,7 +881,7 @@ export function Agent() {
                 <Plus className="h-4 w-4" />
               </button>
               {showUploadMenu && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
+                <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
                   <button
                     type="button"
                     onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
@@ -786,6 +889,14 @@ export function Agent() {
                   >
                     <Paperclip className="h-4 w-4" />
                     Upload PDF document
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { imageInputRef.current?.click(); setShowUploadMenu(false); }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                  >
+                    <ImagePlus className="h-4 w-4" />
+                    添加图片（模型识图）
                   </button>
                   <div className="border-t my-1" />
                   <button
@@ -810,6 +921,14 @@ export function Agent() {
               onChange={handleFileSelect}
               className="hidden"
             />
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleImageSelect}
+              className="hidden"
+            />
             <textarea
               ref={inputRef}
               value={input}
@@ -823,7 +942,7 @@ export function Agent() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  runPrompt(input.trim());
+                  runPrompt();
                 }
               }}
               placeholder={t.prompt}
@@ -852,7 +971,7 @@ export function Agent() {
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim() && !attachment}
+                disabled={!input.trim() && !attachment && pendingImages.length === 0}
                 className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
                 <Send className="h-4 w-4" />

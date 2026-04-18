@@ -19,13 +19,14 @@ import logging
 import os
 import time as _time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from src.agent.context import ContextBuilder
 from src.agent.memory import WorkspaceMemory
 from src.agent.tools import ToolRegistry
 from src.agent.trace import TraceWriter
 from src.core.state import RunStateStore
+from src.session.content_utils import plain_text_for_index, trace_prompt_preview
 from src.providers.chat import ChatLLM
 from src.tools.background_tools import get_background_manager
 
@@ -285,7 +286,7 @@ class AgentLoop:
 
     def run(
         self,
-        user_message: str,
+        user_message: Union[str, List[Dict[str, Any]]],
         history: Optional[List[Dict[str, Any]]] = None,
         session_id: str = "",
         session_config: Optional[Dict[str, Any]] = None,
@@ -293,7 +294,7 @@ class AgentLoop:
         """Run the ReAct loop synchronously.
 
         Args:
-            user_message: User message.
+            user_message: Plain-text user message or OpenAI multimodal content parts.
             history: Prior conversation messages.
             session_id: Session ID.
             session_config: Optional session metadata (e.g. client channel).
@@ -315,7 +316,15 @@ class AgentLoop:
             run_dir = state_store.create_run_dir(RUNS_DIR)
             self.memory.run_dir = str(run_dir)
 
-        state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        if isinstance(user_message, str):
+            state_store.save_request(run_dir, user_message, {"session_id": session_id})
+        else:
+            state_store.save_request(
+                run_dir,
+                plain_text_for_index(user_message),
+                {"session_id": session_id},
+                user_content=user_message,
+            )
 
         context = ContextBuilder(self.registry, self.memory,
                                   persistent_memory=self._persistent_memory)
@@ -323,7 +332,7 @@ class AgentLoop:
         react_trace: List[Dict[str, Any]] = []
 
         trace = TraceWriter(run_dir)
-        trace.write({"type": "start", "prompt": user_message[:500]})
+        trace.write({"type": "start", "prompt": trace_prompt_preview(user_message, 500)})
 
         iteration = 0
         final_content = ""

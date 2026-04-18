@@ -1,5 +1,7 @@
 import EventSource from 'eventsource'
 
+import type { VibeUserContent } from './content.js'
+
 function waitOpen(es: EventSource): Promise<void> {
   return new Promise((resolve, reject) => {
     if (es.readyState === EventSource.OPEN) {
@@ -58,7 +60,7 @@ export async function createSession(baseUrl: string, title: string): Promise<str
 export async function sendUserMessage(
   baseUrl: string,
   sessionId: string,
-  content: string,
+  content: VibeUserContent,
 ): Promise<{ message_id: string; attempt_id: string }> {
   const r = await fetch(`${baseUrl}/sessions/${encodeURIComponent(sessionId)}/messages`, {
     method: 'POST',
@@ -223,7 +225,7 @@ function waitAttemptWithEvents(
 export async function runTurn(
   baseUrl: string,
   sessionId: string,
-  content: string,
+  content: VibeUserContent,
   timeoutMs: number,
   handlers?: RunTurnHandlers,
 ): Promise<{ ok: true; summary: string } | { ok: false; error: string }> {

@@ -78,6 +78,18 @@ export const MessageBubble = memo(function MessageBubble({ msg, onRetry }: Props
     return (
       <div className="flex justify-end gap-3 group">
         <div className="max-w-[72%] rounded-2xl rounded-tr-sm bg-primary text-primary-foreground px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+          {msg.imageUrls && msg.imageUrls.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {msg.imageUrls.map((url, i) => (
+                <img
+                  key={i}
+                  src={url}
+                  alt=""
+                  className="max-h-40 max-w-full rounded-lg border border-primary-foreground/20 object-contain"
+                />
+              ))}
+            </div>
+          )}
           {msg.content}
           {ts && <span className="block text-[9px] opacity-50 text-right mt-1">{ts}</span>}
         </div>

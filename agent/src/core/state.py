@@ -31,18 +31,27 @@ class RunStateStore:
         (run_dir / "artifacts").mkdir(exist_ok=True)
         return run_dir
 
-    def save_request(self, run_dir: Path, prompt: str, context: Dict[str, Any]) -> Dict[str, Any]:
+    def save_request(
+        self,
+        run_dir: Path,
+        prompt: str,
+        context: Dict[str, Any],
+        user_content: Any = None,
+    ) -> Dict[str, Any]:
         """Save the user request.
 
         Args:
             run_dir: Run directory.
-            prompt: User prompt.
+            prompt: User prompt (plain summary; safe to log).
             context: Context metadata.
+            user_content: Optional OpenAI multimodal parts (same as API); omitted for text-only.
 
         Returns:
             Saved payload.
         """
-        payload = {"prompt": prompt, "context": context}
+        payload: Dict[str, Any] = {"prompt": prompt, "context": context}
+        if user_content is not None:
+            payload["user_content"] = user_content
         self._write_json(run_dir / "req.json", payload)
         return payload
 

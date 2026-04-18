@@ -129,7 +129,8 @@ class Attempt:
         session_id: Owning session ID.
         parent_attempt_id: Parent Attempt ID for follow-up modification scenarios.
         status: Execution status.
-        prompt: User input that triggered this execution.
+        prompt: User input that triggered this execution (plain text summary for logs).
+        user_content: When set, OpenAI-style multimodal parts (list of dicts); otherwise use ``prompt`` only.
         run_dir: Run directory path.
         summary: Execution summary.
         react_trace: ReAct agent trace records.
@@ -144,6 +145,7 @@ class Attempt:
     parent_attempt_id: Optional[str] = None
     status: AttemptStatus = AttemptStatus.PENDING
     prompt: str = ""
+    user_content: Optional[Any] = None
     run_dir: Optional[str] = None
     summary: Optional[str] = None
     react_trace: List[Dict[str, Any]] = field(default_factory=list)

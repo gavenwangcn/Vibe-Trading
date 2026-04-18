@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from src.agent.memory import WorkspaceMemory
 from src.agent.skills import SkillsLoader
 from src.agent.tools import ToolRegistry
 from src.shanghai_time import now_shanghai
+from src.session.content_utils import (
+    enrich_user_content_with_recall,
+    recall_query_text,
+)
 
 if TYPE_CHECKING:
     from src.memory.persistent import PersistentMemory
@@ -155,7 +159,7 @@ class ContextBuilder:
 
     def build_messages(
         self,
-        user_message: str,
+        user_message: Union[str, List[Dict[str, Any]]],
         history: Optional[List[Dict[str, Any]]] = None,
         session_config: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
@@ -166,14 +170,16 @@ class ContextBuilder:
         while providing per-query relevant memories.
 
         Args:
-            user_message: User message.
+            user_message: Plain string or OpenAI multimodal content parts (text + image_url).
             history: Prior conversation messages.
             session_config: Optional session metadata (e.g. ``{"client": "wechat"}``).
 
         Returns:
             OpenAI-format message list.
         """
-        system_content = self.build_system_prompt(user_message)
+        system_content = self.build_system_prompt(
+            recall_query_text(user_message) if isinstance(user_message, list) else user_message,
+        )
         if session_config and session_config.get("client") == "wechat":
             system_content = system_content + "\n" + _WECHAT_CLIENT_APPENDIX
         messages: List[Dict[str, Any]] = [
@@ -183,17 +189,18 @@ class ContextBuilder:
             messages.extend(history)
 
         # Auto-recall: inject relevant memories into user message
-        enriched = user_message
+        enriched: Union[str, List[Dict[str, Any]]] = user_message
         if self._persistent_memory:
             try:
-                recalls = self._persistent_memory.find_relevant(user_message, max_results=3)
+                q = recall_query_text(user_message)
+                recalls = self._persistent_memory.find_relevant(q, max_results=3)
                 if recalls:
                     lines = [f"- **{r.title}** ({r.memory_type}): {r.body[:500]}" for r in recalls]
                     recall_block = "\n".join(lines)
-                    enriched = (
+                    recall_prefix = (
                         f"<recalled-memories>\n{recall_block}\n</recalled-memories>\n\n"
-                        f"{user_message}"
                     )
+                    enriched = enrich_user_content_with_recall(user_message, recall_prefix)
             except Exception as exc:
                 logger.debug("Auto-recall failed: %s", exc)
 

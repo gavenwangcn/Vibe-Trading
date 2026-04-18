@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
@@ -20,6 +21,7 @@ from src.session.models import (
     Message,
     Session,
 )
+from src.session.content_utils import UserContent, plain_text_for_index
 from src.session.search import get_shared_index
 from src.session.store import SessionStore
 from src.shanghai_time import now_shanghai_iso
@@ -82,12 +84,12 @@ class SessionService:
         self.event_bus.clear(session_id)
         return self.store.delete_session(session_id)
 
-    async def send_message(self, session_id: str, content: str, role: str = "user") -> Dict[str, Any]:
+    async def send_message(self, session_id: str, content: UserContent, role: str = "user") -> Dict[str, Any]:
         """Send a message to a session and trigger execution.
 
         Args:
             session_id: Session ID.
-            content: Message content.
+            content: Plain string or OpenAI multimodal parts (text + image_url).
             role: Message role.
 
         Returns:
@@ -97,20 +99,34 @@ class SessionService:
         if not session:
             raise ValueError(f"Session {session_id} not found")
 
-        message = Message(session_id=session_id, role=role, content=content)
+        plain = plain_text_for_index(content)
+        meta: Dict[str, Any] = {}
+        if isinstance(content, list):
+            meta["user_content"] = content
+
+        message = Message(session_id=session_id, role=role, content=plain, metadata=meta)
         self.store.append_message(message)
-        self._search_index.index_message(session_id, role, content)
-        self.event_bus.emit(session_id, "message.received", {"message_id": message.message_id, "role": role, "content": content})
+        self._search_index.index_message(session_id, role, plain)
+        self.event_bus.emit(
+            session_id,
+            "message.received",
+            {"message_id": message.message_id, "role": role, "content": plain},
+        )
 
         if role != "user":
             return {"message_id": message.message_id}
 
-        attempt = Attempt(session_id=session_id, parent_attempt_id=session.last_attempt_id, prompt=content)
+        attempt = Attempt(
+            session_id=session_id,
+            parent_attempt_id=session.last_attempt_id,
+            prompt=plain,
+            user_content=content if isinstance(content, list) else None,
+        )
         self.store.create_attempt(attempt)
         session.last_attempt_id = attempt.attempt_id
         session.updated_at = now_shanghai_iso()
         self.store.update_session(session)
-        self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": content})
+        self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": plain})
 
         asyncio.create_task(self._run_attempt(session, attempt))
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
@@ -140,6 +156,7 @@ class SessionService:
 
         # Append the user's reply to the prompt and rerun the attempt.
         attempt.prompt = f"{attempt.prompt}\n\nUser reply: {user_input}"
+        attempt.user_content = None  # resume path is text-only for the merged prompt
         attempt.status = AttemptStatus.RUNNING
         self.store.update_attempt(attempt)
         self.event_bus.emit(session_id, "attempt.resumed", {"attempt_id": attempt_id, "user_input": user_input})
@@ -259,10 +276,14 @@ class SessionService:
 
         try:
             loop = asyncio.get_running_loop()
+            user_turn: Union[str, List[Dict[str, Any]]] = (
+                attempt.user_content if attempt.user_content is not None else attempt.prompt
+            )
+
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
-                lambda: agent.run(
-                    user_message=attempt.prompt,
+                lambda ut=user_turn: agent.run(
+                    user_message=ut,
                     history=history,
                     session_id=session_id,
                     session_config=session_config,
@@ -305,19 +326,34 @@ class SessionService:
         history = []
         for msg in messages[:-1]:
             role = msg.role if hasattr(msg, "role") else msg.get("role", "user")
+            md = msg.metadata if hasattr(msg, "metadata") else msg.get("metadata") or {}
+            if not isinstance(md, dict):
+                md = {}
+            uc = md.get("user_content")
             content = msg.content if hasattr(msg, "content") else msg.get("content", "")
-            if not content.strip() or role not in ("user", "assistant"):
+            if role not in ("user", "assistant"):
                 continue
-            content = re.sub(r"Run directory:\s*\S+", _shorten_run_dir, content).strip()
-            if content:
-                history.append({"role": role, "content": content})
+            if isinstance(uc, list) and uc:
+                entry = {"role": role, "content": uc}
+            else:
+                if not (content or "").strip():
+                    continue
+                content = re.sub(r"Run directory:\s*\S+", _shorten_run_dir, content).strip()
+                if not content:
+                    continue
+                entry = {"role": role, "content": content}
+            history.append(entry)
 
         # Trim from the newest messages within a character budget of roughly 3000 tokens.
         MAX_HISTORY_CHARS = 12000
         total_chars = 0
         trimmed: list = []
         for msg in reversed(history):
-            msg_len = len(msg.get("content", ""))
+            c = msg.get("content", "")
+            if isinstance(c, list):
+                msg_len = len(json.dumps(c, ensure_ascii=False))
+            else:
+                msg_len = len(c)
             if total_chars + msg_len > MAX_HISTORY_CHARS:
                 break
             trimmed.append(msg)
