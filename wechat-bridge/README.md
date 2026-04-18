@@ -74,7 +74,7 @@ npm run dev
 2. 启动 API + 微信桥：
 
    ```bash
-   docker compose --profile wechat up -d --build
+   docker compose up -d --build
    ```
 
 3. 首次登录需查看二维码日志：
@@ -99,21 +99,21 @@ npm run dev
 
 ```bash
 WECHAT_DATA_ROOT=./wechat-instances WECHAT_INSTANCE_NAME=a \
-  docker compose -p wt-a --profile wechat up -d --build
+  docker compose -p wt-a up -d --build
 ```
 
 若希望目录为**项目根下 `./a/`**（`WECHAT_DATA_ROOT=. `）：
 
 ```bash
 WECHAT_DATA_ROOT=. WECHAT_INSTANCE_NAME=a \
-  docker compose -p wt-a --profile wechat up -d --build
+  docker compose -p wt-a up -d --build
 ```
 
 再启账号 B（**必须**换 compose 项目名 `-p`，否则与 A 冲突）：
 
 ```bash
 WECHAT_DATA_ROOT=./wechat-instances WECHAT_INSTANCE_NAME=b \
-  docker compose -p wt-b --profile wechat up -d --build
+  docker compose -p wt-b up -d --build
 ```
 
 同一时刻可运行多个桥容器，**共用**同一 `vibe-trading` 服务；查看日志：`docker compose -p wt-a logs -f wechat-bridge`。

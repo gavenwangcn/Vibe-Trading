@@ -13,8 +13,6 @@ services:
     restart: unless-stopped
 
   wechat-bridge:
-    profiles:
-      - wechat
     build:
       context: ..
       dockerfile: Vibe-Trading/wechat-bridge/Dockerfile

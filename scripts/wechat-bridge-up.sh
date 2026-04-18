@@ -3,7 +3,7 @@
 # 多实例时每个实例使用不同的 --instance 与宿主机数据目录，避免与 compose 内单服务定义冲突。
 #
 # 前置：已构建镜像，例如：
-#   cd Vibe-Trading && docker compose --profile wechat build wechat-bridge
+#   cd Vibe-Trading && docker compose build wechat-bridge
 #
 # 用法示例（须在 Vibe-Trading 目录执行，或与主栈相同的 compose 项目目录）：
 #   ./scripts/wechat-bridge-up.sh --instance a --data-root ./wechat-instances
@@ -23,7 +23,7 @@ FORCE="0"
 usage() {
   cat <<'EOF'
 仅创建/启动微信桥容器（不构建镜像），加入主栈 vibe-trading 所在网络。
-前置: docker compose --profile wechat build wechat-bridge
+前置: docker compose build wechat-bridge
 
 用法:
   ./scripts/wechat-bridge-up.sh --instance <name> [选项]
@@ -114,10 +114,10 @@ fi
 
 IMAGE="$IMAGE_OVERRIDE"
 if [[ -z "$IMAGE" ]]; then
-  IMAGE="$(docker compose --profile wechat images -q wechat-bridge 2>/dev/null | head -1 || true)"
+  IMAGE="$(docker compose images -q wechat-bridge 2>/dev/null | head -1 || true)"
 fi
 if [[ -z "$IMAGE" ]]; then
-  echo "错误: 未找到 wechat-bridge 镜像。请先在本目录构建: docker compose --profile wechat build wechat-bridge" >&2
+  echo "错误: 未找到 wechat-bridge 镜像。请先在本目录构建: docker compose build wechat-bridge" >&2
   echo "或显式传入: --image <镜像名:标签>" >&2
   exit 1
 fi
