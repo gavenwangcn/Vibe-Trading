@@ -85,6 +85,17 @@ _MEMORY_SECTION = """
 
 """
 
+# Appended to system prompt when session.config["client"] == "wechat".
+_WECHAT_CLIENT_APPENDIX = """
+## Output channel (WeChat)
+
+The user reads your reply inside WeChat. Rendering differs from a web UI:
+- Avoid Markdown tables; for structured data use one field per line like 「字段名：值」.
+- Use bullet lines starting with 「·」 or numbered lists 「1. 2. 3.」; separate important points with short paragraphs and blank lines between them.
+- Keep formulas simple; prefer plain numbers and short expressions over heavy LaTeX.
+- Still match the user's language; stay clear and professional.
+"""
+
 
 class ContextBuilder:
     """Builds message context for AgentLoop.
@@ -142,7 +153,12 @@ class ContextBuilder:
             current_datetime=now.strftime("%A, %B %d, %Y %H:%M (Asia/Shanghai)"),
         )
 
-    def build_messages(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    def build_messages(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        session_config: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
         """Build full message list.
 
         Auto-recalls relevant persistent memories and injects them into the
@@ -152,12 +168,16 @@ class ContextBuilder:
         Args:
             user_message: User message.
             history: Prior conversation messages.
+            session_config: Optional session metadata (e.g. ``{"client": "wechat"}``).
 
         Returns:
             OpenAI-format message list.
         """
+        system_content = self.build_system_prompt(user_message)
+        if session_config and session_config.get("client") == "wechat":
+            system_content = system_content + "\n" + _WECHAT_CLIENT_APPENDIX
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self.build_system_prompt(user_message)},
+            {"role": "system", "content": system_content},
         ]
         if history:
             messages.extend(history)

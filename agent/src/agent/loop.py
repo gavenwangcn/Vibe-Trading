@@ -283,13 +283,20 @@ class AgentLoop:
         """
         self._cancelled = True
 
-    def run(self, user_message: str, history: Optional[List[Dict[str, Any]]] = None, session_id: str = "") -> Dict[str, Any]:
+    def run(
+        self,
+        user_message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        session_id: str = "",
+        session_config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Run the ReAct loop synchronously.
 
         Args:
             user_message: User message.
             history: Prior conversation messages.
             session_id: Session ID.
+            session_config: Optional session metadata (e.g. client channel).
 
         Returns:
             Execution result dict.
@@ -312,7 +319,7 @@ class AgentLoop:
 
         context = ContextBuilder(self.registry, self.memory,
                                   persistent_memory=self._persistent_memory)
-        messages = context.build_messages(user_message, history)
+        messages = context.build_messages(user_message, history, session_config=session_config)
         react_trace: List[Dict[str, Any]] = []
 
         trace = TraceWriter(run_dir)

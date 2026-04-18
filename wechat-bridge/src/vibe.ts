@@ -45,7 +45,7 @@ export async function createSession(baseUrl: string, title: string): Promise<str
   const r = await fetch(`${baseUrl}/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, config: { client: 'wechat' } }),
   })
   if (!r.ok) {
     const t = await r.text()

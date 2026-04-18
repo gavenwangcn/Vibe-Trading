@@ -237,6 +237,8 @@ class SessionService:
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
+        sess = self.store.get_session(session_id)
+        session_config: Dict[str, Any] = dict(sess.config) if sess and sess.config else {}
 
         def event_callback(event_type: str, data: Dict[str, Any]) -> None:
             """Forward AgentLoop events to the SSE event bus."""
@@ -263,6 +265,7 @@ class SessionService:
                     user_message=attempt.prompt,
                     history=history,
                     session_id=session_id,
+                    session_config=session_config,
                 ),
             )
         finally:
