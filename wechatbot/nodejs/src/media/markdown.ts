@@ -21,13 +21,15 @@ export function stripMarkdown(text: string): string {
   // Links: keep display text only [text](url) → text
   result = result.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
 
-  // Tables: remove separator rows, then clean pipes
+  // Tables: remove separator rows；每格一行并加 ·（微信纯文本无表格，压成一行会难读）
   result = result.replace(/^\|[\s:|-]+\|$/gm, '')
   result = result.replace(/^\|(.+)\|$/gm, (_match, inner: string) =>
     inner
       .split('|')
       .map((cell) => cell.trim())
-      .join('  '),
+      .filter((cell) => cell.length > 0)
+      .map((cell) => `· ${cell}`)
+      .join('\n'),
   )
 
   // Headers: strip # prefix

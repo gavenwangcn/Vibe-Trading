@@ -11,6 +11,7 @@ import {
   type IncomingMessage,
   type LogLevel,
 } from '@wechatbot/wechatbot'
+import { toWeChatPlainText } from './wechatFormat.js'
 import qrTerminal from 'qrcode-terminal'
 
 import { getBaseUrl, getStatePath } from './config.js'
@@ -208,7 +209,7 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
 
     if (WECHAT_STREAM_ENABLED) {
       streamedRaw = streamAcc
-      const plain = stripMarkdown(streamAcc).trim()
+      const plain = toWeChatPlainText(streamAcc)
       if (plain) await reply(plain)
     }
 
@@ -226,7 +227,8 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
     let body = sliceFinalSummary(summaryRaw, streamedRaw)
     if (body) {
       body = removeMediaPaths(body, mediaFiles)
-      if (body.trim()) await reply(body.trim())
+      const plain = toWeChatPlainText(body)
+      if (plain) await reply(plain)
     }
 
     if (mediaFiles.length > 0) {
