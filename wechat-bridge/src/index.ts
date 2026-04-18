@@ -22,7 +22,6 @@ import {
 } from './content.js'
 import { getSessionForUser, setSessionForUser } from './state.js'
 import { createSession, runTurn, type RunTurnHandlers } from './vibe.js'
-import { TextStreamFlush } from './streamFlush.js'
 import { createToolHandlers, type ToolDisplayMode } from './toolBatcher.js'
 
 const baseUrl = getBaseUrl()
@@ -33,8 +32,6 @@ const WECHAT_STREAM_ENABLED =
   process.env.WECHAT_STREAM_ENABLED !== '0' && process.env.WECHAT_STREAM_ENABLED !== 'false'
 const WECHAT_TOOL_NOTIFY =
   process.env.WECHAT_TOOL_NOTIFY !== '0' && process.env.WECHAT_TOOL_NOTIFY !== 'false'
-const STREAM_INTERVAL_MS = Number(process.env.WECHAT_STREAM_INTERVAL_MS ?? 1200)
-const STREAM_MIN_CHARS = Number(process.env.WECHAT_STREAM_MIN_CHARS ?? 180)
 const MSG_MIN_GAP_MS = Number(process.env.WECHAT_MSG_MIN_GAP_MS ?? 450)
 
 const rawToolDisplay = (process.env.WECHAT_TOOL_DISPLAY ?? 'merge').trim().toLowerCase()
@@ -183,19 +180,14 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
     const { reply, stopTypingOnce } = createSafeReplier(bot, msg, userId, MSG_MIN_GAP_MS)
 
     let streamedRaw = ''
-    let stream: TextStreamFlush | null = null
-    if (WECHAT_STREAM_ENABLED) {
-      stream = new TextStreamFlush(STREAM_INTERVAL_MS, STREAM_MIN_CHARS, async (chunk) => {
-        const plain = stripMarkdown(chunk).trim()
-        if (plain) await reply(plain)
-      })
-    }
+    /** 累积 SSE text_delta；回合结束时一次性 reply。iLink 对同一 context 多次 sendmessage 易 ret=-2，不分段逐条发。 */
+    let streamAcc = ''
 
     const handlers: RunTurnHandlers = {}
 
-    if (WECHAT_STREAM_ENABLED && stream) {
+    if (WECHAT_STREAM_ENABLED) {
       handlers.onTextDelta = async (delta: string) => {
-        stream!.push(delta)
+        streamAcc += delta
       }
     }
 
@@ -214,9 +206,10 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
 
     await flushToolPending()
 
-    if (WECHAT_STREAM_ENABLED && stream) {
-      await stream.flushTail()
-      streamedRaw = stream.getRaw()
+    if (WECHAT_STREAM_ENABLED) {
+      streamedRaw = streamAcc
+      const plain = stripMarkdown(streamAcc).trim()
+      if (plain) await reply(plain)
     }
 
     await stopTypingOnce()
@@ -271,8 +264,6 @@ async function main(): Promise<void> {
     toolNotify: WECHAT_TOOL_NOTIFY,
     toolDisplay: WECHAT_TOOL_DISPLAY,
     toolBatchMs: TOOL_BATCH_MS,
-    streamIntervalMs: STREAM_INTERVAL_MS,
-    streamMinChars: STREAM_MIN_CHARS,
     msgMinGapMs: MSG_MIN_GAP_MS,
   })
 
