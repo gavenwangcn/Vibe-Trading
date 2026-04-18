@@ -24,6 +24,7 @@ import {
 import { getSessionForUser, setSessionForUser } from './state.js'
 import { createSession, runTurn, type RunTurnHandlers } from './vibe.js'
 import { createToolHandlers, type ToolDisplayMode } from './toolBatcher.js'
+import { queuedSendWithRetry } from './replyRetry.js'
 
 const baseUrl = getBaseUrl()
 const statePath = getStatePath()
@@ -125,10 +126,26 @@ function createSafeReplier(
     const wait = Math.max(0, minGapMs - (now - last))
     if (wait) await new Promise((r) => setTimeout(r, wait))
     await stopTypingOnce()
-    await bot.reply(msg, trimmed)
-    last = Date.now()
+    const ok = await queuedSendWithRetry(log, 'reply-text', async () => {
+      await bot.reply(msg, trimmed)
+    })
+    if (ok) last = Date.now()
   }
   return { reply, stopTypingOnce }
+}
+
+/** 非对话主流程里的纯文本回复（/help、新会话提示、桥接错误提示等），同样走队列 + 重试 */
+async function replyPlain(
+  bot: WeChatBot,
+  msg: IncomingMessage,
+  text: string,
+  label: string,
+): Promise<void> {
+  const trimmed = text.trim()
+  if (!trimmed) return
+  await queuedSendWithRetry(log, label, async () => {
+    await bot.reply(msg, trimmed)
+  })
 }
 
 async function ensureSession(userId: string, label: string): Promise<string> {
@@ -141,7 +158,7 @@ async function ensureSession(userId: string, label: string): Promise<string> {
 }
 
 async function handleHelp(bot: WeChatBot, msg: IncomingMessage): Promise<void> {
-  await bot.reply(msg, buildHelpText())
+  await replyPlain(bot, msg, buildHelpText(), 'help')
 }
 
 async function handleNewSession(
@@ -151,13 +168,13 @@ async function handleNewSession(
 ): Promise<void> {
   const sid = await createSession(baseUrl, sessionTitle(msg.userId.slice(0, 8)))
   await setSessionForUser(statePath, userId, sid)
-  await bot.reply(msg, '已开始新会话，可直接发消息对话。')
+  await replyPlain(bot, msg, '已开始新会话，可直接发消息对话。', 'new-session')
 }
 
 async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<void> {
   const userId = msg.userId
   if (busy.has(userId)) {
-    await bot.reply(msg, '上一条还在处理，请稍候再发。')
+    await replyPlain(bot, msg, '上一条还在处理，请稍候再发。', 'busy')
     return
   }
 
@@ -237,8 +254,17 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
           const data = await readFile(filePath)
           const fileName = basename(filePath)
           await new Promise((r) => setTimeout(r, MSG_MIN_GAP_MS))
-          await bot.reply(msg, { file: data, fileName })
-        } catch {
+          const sent = await queuedSendWithRetry(log, 'reply-file', async () => {
+            await bot.reply(msg, { file: data, fileName })
+          })
+          if (!sent) {
+            await reply(`[文件发送失败: ${basename(filePath)}]`)
+          }
+        } catch (readErr) {
+          log.warn('media read or send error', {
+            path: filePath,
+            error: readErr instanceof Error ? readErr.message : String(readErr),
+          })
           await reply(`[文件发送失败: ${basename(filePath)}]`)
         }
       }
@@ -251,7 +277,7 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
     }
     const err = e instanceof Error ? e.message : String(e)
     log.error('handleUserMessage error', { error: err })
-    await bot.reply(msg, `桥接错误：${err}`)
+    await replyPlain(bot, msg, `桥接错误：${err}`, 'bridge-catch')
   } finally {
     busy.delete(userId)
   }

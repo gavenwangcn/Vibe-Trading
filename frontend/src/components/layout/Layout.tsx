@@ -1,6 +1,6 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, PlugZap } from "lucide-react";
+import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, PlugZap, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -14,6 +14,154 @@ const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
   { to: "/agent", icon: Bot, key: "agent" as const },
 ];
+
+/** Title starts with "WeChat" (case-insensitive) or contains 微信 → 全微信 group. */
+function isWeChatSession(s: SessionItem): boolean {
+  const title = (s.title || "").trim();
+  if (!title) return false;
+  if (/^wechat\b/i.test(title)) return true;
+  return /微信/.test(title);
+}
+
+function SessionRow({
+  s,
+  activeSessionId,
+  deleteTarget,
+  setDeleteTarget,
+  renameTarget,
+  setRenameTarget,
+  renameValue,
+  setRenameValue,
+  renameSession,
+  deleteSession,
+  t,
+}: {
+  s: SessionItem;
+  activeSessionId: string | null;
+  deleteTarget: string | null;
+  setDeleteTarget: (v: string | null) => void;
+  renameTarget: string | null;
+  setRenameTarget: (v: string | null) => void;
+  renameValue: string;
+  setRenameValue: (v: string) => void;
+  renameSession: (sid: string) => void | Promise<void>;
+  deleteSession: (sid: string) => void | Promise<void>;
+  t: {
+    deleteConfirm: string;
+    confirmDelete: string;
+    cancelDelete: string;
+  };
+}) {
+  const isActive = s.session_id === activeSessionId;
+  const isDeleting = deleteTarget === s.session_id;
+  const isRenaming = renameTarget === s.session_id;
+  return (
+    <div className="group relative flex items-center">
+      {isRenaming ? (
+        <input
+          autoFocus
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void renameSession(s.session_id); if (e.key === "Escape") setRenameTarget(null); }}
+          onBlur={() => void renameSession(s.session_id)}
+          className="flex-1 min-w-0 pl-3 pr-2 py-1 rounded-md text-xs border border-primary bg-background outline-none"
+        />
+      ) : (
+        <Link
+          to={`/agent?session=${s.session_id}`}
+          className={cn(
+            "flex-1 min-w-0 pl-3 pr-14 py-1.5 rounded-md text-xs transition-colors truncate block border-l-2",
+            isActive
+              ? "border-l-primary bg-primary/10 text-primary font-medium"
+              : "border-l-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+          )}
+          title={s.title || s.session_id}
+        >
+          <span className="flex items-center gap-1.5">
+            <span className={cn(
+              "h-1.5 w-1.5 rounded-full shrink-0",
+              s.status === "failed" ? "bg-danger" : isActive ? "bg-warning" : "bg-success/60"
+            )} />
+            {s.title || s.session_id.slice(0, 16)}
+          </span>
+        </Link>
+      )}
+      {!isRenaming && isDeleting ? (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-end gap-1 rounded-md border border-border bg-card/95 px-2 py-0.5 shadow-sm backdrop-blur-[2px]"
+          role="group"
+          aria-label={t.deleteConfirm}
+        >
+          <button
+            type="button"
+            onClick={() => void deleteSession(s.session_id)}
+            className="shrink-0 rounded px-2 py-1 text-[11px] font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {t.confirmDelete}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDeleteTarget(null)}
+            className="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {t.cancelDelete}
+          </button>
+        </div>
+      ) : !isRenaming ? (
+        <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
+            className="p-1 text-muted-foreground hover:text-foreground rounded"
+            title="Rename"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(s.session_id); }}
+            className="p-1 text-muted-foreground hover:text-danger rounded"
+            title={t.deleteConfirm}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SessionGroup({
+  label,
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-md">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1 px-1.5 py-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-md transition-colors"
+      >
+        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 transition-transform text-muted-foreground/80", open && "rotate-90")} />
+        <span className="truncate">{label}</span>
+        <span className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground/70">{count}</span>
+      </button>
+      {open && (
+        <div className="mt-0.5 ml-2 pl-2 border-l border-border/50 space-y-0.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function Layout() {
   const { pathname } = useLocation();
@@ -47,6 +195,17 @@ export function Layout() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [openWeChat, setOpenWeChat] = useState(false);
+  const [openOther, setOpenOther] = useState(false);
+
+  const { wechatSessions, otherSessions } = useMemo(() => {
+    const wechat: SessionItem[] = [];
+    const other: SessionItem[] = [];
+    for (const s of sessions) {
+      (isWeChatSession(s) ? wechat : other).push(s);
+    }
+    return { wechatSessions: wechat, otherSessions: other };
+  }, [sessions]);
 
   const deleteSession = async (sid: string) => {
     try {
@@ -136,7 +295,7 @@ export function Layout() {
               </Link>
             </div>
 
-            <div className="px-2 pb-2 space-y-0.5 overflow-auto flex-1">
+            <div className="px-2 pb-2 space-y-1 overflow-auto flex-1">
               {sessionsLoading ? (
                 <div className="space-y-1.5 px-2 py-1">
                   {[1, 2, 3].map((i) => (
@@ -145,84 +304,64 @@ export function Layout() {
                 </div>
               ) : sessions.length === 0 ? (
                 <p className="px-3 py-2 text-xs text-muted-foreground/60">{t.noSessions}</p>
-              ) : null}
-              {sessions.map((s) => {
-                const isActive = s.session_id === activeSessionId;
-                const isDeleting = deleteTarget === s.session_id;
-                const isRenaming = renameTarget === s.session_id;
-                return (
-                  <div key={s.session_id} className="group relative flex items-center">
-                    {isRenaming ? (
-                      <input
-                        autoFocus
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") renameSession(s.session_id); if (e.key === "Escape") setRenameTarget(null); }}
-                        onBlur={() => renameSession(s.session_id)}
-                        className="flex-1 min-w-0 pl-3 pr-2 py-1 rounded-md text-xs border border-primary bg-background outline-none"
-                      />
+              ) : (
+                <>
+                  <SessionGroup
+                    label={t.sessionGroupWeChat}
+                    count={wechatSessions.length}
+                    open={openWeChat}
+                    onToggle={() => setOpenWeChat((v) => !v)}
+                  >
+                    {wechatSessions.length === 0 ? (
+                      <p className="px-2 py-1 text-[11px] text-muted-foreground/60">{t.sessionGroupEmpty}</p>
                     ) : (
-                      <Link
-                        to={`/agent?session=${s.session_id}`}
-                        className={cn(
-                          "flex-1 min-w-0 pl-3 pr-14 py-1.5 rounded-md text-xs transition-colors truncate block border-l-2",
-                          isActive
-                            ? "border-l-primary bg-primary/10 text-primary font-medium"
-                            : "border-l-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
-                        )}
-                        title={s.title || s.session_id}
-                      >
-                        <span className="flex items-center gap-1.5">
-                          <span className={cn(
-                            "h-1.5 w-1.5 rounded-full shrink-0",
-                            s.status === "failed" ? "bg-danger" : isActive ? "bg-warning" : "bg-success/60"
-                          )} />
-                          {s.title || s.session_id.slice(0, 16)}
-                        </span>
-                      </Link>
+                      wechatSessions.map((s) => (
+                        <SessionRow
+                          key={s.session_id}
+                          s={s}
+                          activeSessionId={activeSessionId}
+                          deleteTarget={deleteTarget}
+                          setDeleteTarget={setDeleteTarget}
+                          renameTarget={renameTarget}
+                          setRenameTarget={setRenameTarget}
+                          renameValue={renameValue}
+                          setRenameValue={setRenameValue}
+                          renameSession={renameSession}
+                          deleteSession={deleteSession}
+                          t={t}
+                        />
+                      ))
                     )}
-                    {!isRenaming && isDeleting ? (
-                      <div
-                        className="absolute inset-0 z-20 flex items-center justify-end gap-1 rounded-md border border-border bg-card/95 px-2 py-0.5 shadow-sm backdrop-blur-[2px]"
-                        role="group"
-                        aria-label={t.deleteConfirm}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => deleteSession(s.session_id)}
-                          className="shrink-0 rounded px-2 py-1 text-[11px] font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                          {t.confirmDelete}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleteTarget(null)}
-                          className="shrink-0 rounded px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          {t.cancelDelete}
-                        </button>
-                      </div>
-                    ) : !isRenaming ? (
-                      <div className="absolute right-1 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
-                        <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRenameTarget(s.session_id); setRenameValue(s.title || ""); }}
-                          className="p-1 text-muted-foreground hover:text-foreground rounded"
-                          title="Rename"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
-                        <button
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget(s.session_id); }}
-                          className="p-1 text-muted-foreground hover:text-danger rounded"
-                          title={t.deleteConfirm}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+                  </SessionGroup>
+                  <SessionGroup
+                    label={t.sessionGroupOther}
+                    count={otherSessions.length}
+                    open={openOther}
+                    onToggle={() => setOpenOther((v) => !v)}
+                  >
+                    {otherSessions.length === 0 ? (
+                      <p className="px-2 py-1 text-[11px] text-muted-foreground/60">{t.sessionGroupEmpty}</p>
+                    ) : (
+                      otherSessions.map((s) => (
+                        <SessionRow
+                          key={s.session_id}
+                          s={s}
+                          activeSessionId={activeSessionId}
+                          deleteTarget={deleteTarget}
+                          setDeleteTarget={setDeleteTarget}
+                          renameTarget={renameTarget}
+                          setRenameTarget={setRenameTarget}
+                          renameValue={renameValue}
+                          setRenameValue={setRenameValue}
+                          renameSession={renameSession}
+                          deleteSession={deleteSession}
+                          t={t}
+                        />
+                      ))
+                    )}
+                  </SessionGroup>
+                </>
+              )}
             </div>
             </div>
           </>
