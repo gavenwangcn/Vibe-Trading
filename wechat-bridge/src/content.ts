@@ -1,12 +1,14 @@
 /**
  * 将微信消息转为发给 Vibe-Trading 的单段文本（与 pi-agent 思路一致，略化）。
+ *
+ * 说明：部分客户端会把截图当作「文件」下发（msg.type === file），此时需按图片走 vision，
+ * 否则会走 /upload + 文本提示，模型看不到图内容。
  */
 
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { IncomingMessage } from '@wechatbot/wechatbot'
-import type { WeChatBot } from '@wechatbot/wechatbot'
+import type { IncomingMessage, WeChatBot, Logger } from '@wechatbot/wechatbot'
 
 import {
   bufferToImageDataUrl,
@@ -51,6 +53,20 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
+/** 微信以「文件」形式发来的常见图片扩展名 → 仍走 vision（image_url data URL） */
+const IMAGE_FILE_EXT = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.heic',
+  '.heif',
+  '.tif',
+  '.tiff',
+])
+
 const TEXT_EXT = new Set([
   '.txt',
   '.md',
@@ -80,42 +96,75 @@ function truncate(s: string): string {
   return `${s.slice(0, MAX_CONTENT - 20)}\n…[已截断至 ${MAX_CONTENT} 字]`
 }
 
+/** 与 case image 一致：二进制 → multimodal vision */
+async function visionPartsFromDownloadedImage(
+  msg: IncomingMessage,
+  bot: WeChatBot,
+  log: Logger | undefined,
+  source: string,
+): Promise<VibeUserContent> {
+  const media = await bot.download(msg)
+  if (!media) {
+    log?.warn('buildVibeUserContent: vision path download failed', { source })
+    return '[图片无法下载]'
+  }
+  log?.info('buildVibeUserContent: vision path', {
+    source,
+    bytes: media.data.length,
+    textPreview: (msg.text ?? '').slice(0, 120),
+  })
+  if (media.data.length > MAX_IMAGE_BYTES) {
+    return truncate(
+      `图片过大（超过 ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB），请发送较小的图片或压缩后再发。`,
+    )
+  }
+  const mime = guessImageMime(media.data)
+  const url = bufferToImageDataUrl(media.data, mime)
+  const parts: OpenAIUserContentPart[] = []
+  const userCaption = msg.text && msg.text !== '[image]' && msg.text !== '[file]' ? msg.text.trim() : ''
+  if (userCaption) {
+    parts.push({ type: 'text', text: truncate(userCaption) })
+  } else {
+    parts.push({
+      type: 'text',
+      text: '用户从微信发来一张图片，请理解图片内容并回复。',
+    })
+  }
+  parts.push({ type: 'image_url', image_url: { url } })
+  log?.info('buildVibeUserContent: vision multimodal ready', { source, mime, dataUrlChars: url.length })
+  return parts
+}
+
 export async function buildVibeUserContent(
   baseUrl: string,
   msg: IncomingMessage,
   bot: WeChatBot,
+  log?: Logger,
 ): Promise<VibeUserContent> {
+  log?.info('buildVibeUserContent: start', {
+    type: msg.type,
+    textPreview: (msg.text ?? '').slice(0, 160),
+    images: msg.images?.length ?? 0,
+    files: msg.files?.length ?? 0,
+    file0: msg.files?.[0]
+      ? { name: msg.files[0].fileName, size: msg.files[0].size }
+      : undefined,
+  })
+
   switch (msg.type) {
     case 'text': {
       const t = msg.text?.trim() ?? ''
+      log?.info('buildVibeUserContent: branch=text', { len: t.length })
       return truncate(t || '[空消息]')
     }
 
     case 'image': {
-      const media = await bot.download(msg)
-      if (!media) return '[图片无法下载]'
-      if (media.data.length > MAX_IMAGE_BYTES) {
-        return truncate(
-          `图片过大（超过 ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB），请发送较小的图片或压缩后再发。`,
-        )
-      }
-      const mime = guessImageMime(media.data)
-      const url = bufferToImageDataUrl(media.data, mime)
-      const parts: OpenAIUserContentPart[] = []
-      const userCaption = msg.text && msg.text !== '[image]' ? msg.text.trim() : ''
-      if (userCaption) {
-        parts.push({ type: 'text', text: truncate(userCaption) })
-      } else {
-        parts.push({
-          type: 'text',
-          text: '用户从微信发来一张图片，请理解图片内容并回复。',
-        })
-      }
-      parts.push({ type: 'image_url', image_url: { url } })
-      return parts
+      log?.info('buildVibeUserContent: branch=image (native image message)')
+      return visionPartsFromDownloadedImage(msg, bot, log, 'image')
     }
 
     case 'voice': {
+      log?.info('buildVibeUserContent: branch=voice')
       const voice = msg.voices[0]
       if (voice?.text) return truncate(`[语音转文字] ${voice.text}`)
       const media = await bot.download(msg)
@@ -133,13 +182,25 @@ export async function buildVibeUserContent(
       const fileSize = file?.size ? ` (${formatFileSize(file.size)})` : ''
       const ext = extname(fileName).toLowerCase()
 
+      log?.info('buildVibeUserContent: branch=file', { fileName, ext, size: file?.size })
+
+      if (IMAGE_FILE_EXT.has(ext)) {
+        log?.info(
+          'buildVibeUserContent: file with image extension → vision path (not /upload)',
+          { ext, fileName },
+        )
+        return visionPartsFromDownloadedImage(msg, bot, log, 'file-as-image')
+      }
+
       if (BLOCKED_UPLOAD_EXT.has(ext)) {
+        log?.warn('buildVibeUserContent: blocked ext', { ext })
         return truncate(
           `[文件类型 ${ext} 不允许上传（与网页一致：可执行文件与压缩包不支持，请先解压或换格式）。]`,
         )
       }
 
       if (TEXT_EXT.has(ext)) {
+        log?.info('buildVibeUserContent: file branch=text-inline-read', { ext })
         try {
           const media = await bot.download(msg)
           if (media) {
@@ -153,6 +214,7 @@ export async function buildVibeUserContent(
       }
 
       try {
+        log?.info('buildVibeUserContent: file branch=upload-to-vibe-api', { ext, fileName })
         const media = await bot.download(msg)
         if (!media) {
           return truncate(`[无法下载文件: ${fileName}${fileSize}]`)
@@ -162,6 +224,7 @@ export async function buildVibeUserContent(
         }
         const uploadName = basename(fileName) || `wechat-upload${ext || '.bin'}`
         const up = await uploadFile(baseUrl, media.data, uploadName)
+        log?.info('buildVibeUserContent: upload ok', { path: up.file_path, filename: up.filename })
         const head = `[Uploaded file: ${fileName}, path: ${up.file_path}]`
         const userNote =
           msg.text?.trim() &&
@@ -182,6 +245,7 @@ export async function buildVibeUserContent(
     }
 
     case 'video': {
+      log?.info('buildVibeUserContent: branch=video')
       const video = msg.videos[0]
       const duration = video?.durationMs ? ` 约 ${Math.round(video.durationMs / 1000)}s` : ''
       try {
@@ -199,6 +263,7 @@ export async function buildVibeUserContent(
     }
 
     default:
+      log?.warn('buildVibeUserContent: unsupported type', { type: msg.type })
       return `[${msg.type} 类型暂不支持]`
   }
 }

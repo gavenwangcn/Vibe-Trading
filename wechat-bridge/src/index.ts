@@ -199,7 +199,7 @@ async function handleUserMessage(bot: WeChatBot, msg: IncomingMessage): Promise<
   try {
     await bot.sendTyping(userId)
     const sessionId = await ensureSession(userId, userId.slice(0, 8))
-    const content = await buildVibeUserContent(baseUrl, msg, bot)
+    const content = await buildVibeUserContent(baseUrl, msg, bot, log.child('content'))
 
     const { reply, stopTypingOnce } = createSafeReplier(bot, msg, userId, MSG_MIN_GAP_MS)
 
