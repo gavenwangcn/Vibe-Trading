@@ -2,6 +2,16 @@ import { ApiError, TransportError } from '../core/errors.js'
 import type { Logger } from '../logger/types.js'
 import type { HttpRequestOptions, HttpResponse, RetryPolicy } from './types.js'
 
+/** 扫码拉二维码、sendmessage 等默认超时（毫秒）。境外或高延迟链路可设环境变量加大，如 60000。 */
+function ilinkDefaultTimeoutMs(): number {
+  const raw = process.env.WECHAT_ILINK_HTTP_TIMEOUT_MS?.trim()
+  if (raw) {
+    const n = Number(raw)
+    if (Number.isFinite(n) && n >= 3_000) return Math.min(n, 180_000)
+  }
+  return 45_000
+}
+
 const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxRetries: 2,
   baseDelayMs: 1_000,
@@ -76,7 +86,7 @@ export class HttpClient {
       url,
       headers: { 'Content-Type': 'application/json', ...headers },
       body,
-      timeoutMs: options?.timeoutMs ?? 15_000,
+      timeoutMs: options?.timeoutMs ?? ilinkDefaultTimeoutMs(),
       signal: options?.signal,
     })
     return response.data
@@ -95,13 +105,13 @@ export class HttpClient {
       method: 'GET',
       url,
       headers,
-      timeoutMs: 15_000,
+      timeoutMs: ilinkDefaultTimeoutMs(),
     })
     return response.data
   }
 
   private async executeRequest<T>(options: HttpRequestOptions): Promise<HttpResponse<T>> {
-    const { method, url, headers, body, timeoutMs = 15_000, signal } = options
+    const { method, url, headers, body, timeoutMs = ilinkDefaultTimeoutMs(), signal } = options
 
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
