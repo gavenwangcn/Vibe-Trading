@@ -12,10 +12,11 @@ services:
       - ./agent/config:/app/agent/config
     restart: unless-stopped
 
+  # SDK 已置于本仓库 wechatbot/nodejs/；构建上下文为 Vibe-Trading 根目录。
   wechat-bridge:
     build:
-      context: ..
-      dockerfile: Vibe-Trading/wechat-bridge/Dockerfile
+      context: .
+      dockerfile: wechat-bridge/Dockerfile
     # 多微信：宿主机目录 {WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → /data
     # 需要固定容器名（如 a）时可在 .env 设置 WECHAT_CONTAINER_NAME，且多实例并行时用不同 compose -p 或不同容器名
     env_file:

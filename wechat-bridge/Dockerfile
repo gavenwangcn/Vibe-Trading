@@ -1,5 +1,6 @@
-# 构建上下文须为仓库根目录（与 docker-compose 中 context: .. 一致）：
-#   docker build -f Vibe-Trading/wechat-bridge/Dockerfile ..
+# 构建上下文为 Vibe-Trading 目录（与 docker-compose 中 context: .、dockerfile: wechat-bridge/Dockerfile 一致）：
+#   docker compose build wechat-bridge
+#   docker build -f wechat-bridge/Dockerfile .
 #
 # 阶段 1：构建 @wechatbot/wechatbot（iLink SDK）
 FROM node:22-bookworm-slim AS wechatbot-sdk
@@ -13,9 +14,9 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
-COPY Vibe-Trading/wechat-bridge/package.json Vibe-Trading/wechat-bridge/package-lock.json ./
-COPY Vibe-Trading/wechat-bridge/tsconfig.json ./
-COPY Vibe-Trading/wechat-bridge/src ./src
+COPY wechat-bridge/package.json wechat-bridge/package-lock.json ./
+COPY wechat-bridge/tsconfig.json ./
+COPY wechat-bridge/src ./src
 
 # 先放入已构建 SDK，再安装依赖（file: 指向容器内路径）
 COPY --from=wechatbot-sdk /vendor/wechatbot/nodejs /vendor/wechatbot/nodejs

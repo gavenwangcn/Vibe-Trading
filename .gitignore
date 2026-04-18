@@ -25,6 +25,10 @@ frontend/tsconfig.tsbuildinfo
 wechat-bridge/node_modules/
 wechat-bridge/dist/
 
+# vendored @wechatbot/wechatbot SDK（本地 npm / 构建产物）
+wechatbot/nodejs/node_modules/
+wechatbot/nodejs/dist/
+
 # 微信桥多实例数据（WECHAT_DATA_ROOT，默认 ./wechat-instances；若设为 . 则根目录下 a/、b/ 等）
 wechat-instances/
 

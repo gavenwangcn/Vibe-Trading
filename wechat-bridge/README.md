@@ -2,16 +2,18 @@
 
 与浏览器 Web UI **并行**：微信消息走本桥 → `vibe-trading serve` 的 Session / Agent（HTTP + SSE），**不**托管前端静态资源。
 
-本目录位于 `Vibe-Trading/wechat-bridge/`；依赖仓库根目录下的 `wechatbot/nodejs` SDK。
+本目录位于 `Vibe-Trading/wechat-bridge/`；依赖同仓库内的 **`Vibe-Trading/wechatbot/nodejs`**（@wechatbot/wechatbot SDK）。
 
 ## 前置
 
 1. 已安装 **Node.js ≥ 22**。
-2. 先构建本地 SDK（仅首次或 SDK 更新后），在**仓库根目录**执行：
+2. 先构建本地 SDK（仅首次或 SDK 更新后），在 **`Vibe-Trading/wechatbot/nodejs`** 执行：
 
    ```bash
-   cd ../../wechatbot/nodejs && npm install && npm run build
+   cd ../wechatbot/nodejs && npm install && npm run build
    ```
+
+   （若在 `wechat-bridge/` 目录下，则为 `cd ../wechatbot/nodejs`。）
 
 3. 启动 Vibe-Trading API（示例端口 8899）：
 
@@ -68,7 +70,7 @@ npm run dev
 
 ## Docker Compose
 
-`docker-compose.yml` 位于 `Vibe-Trading/`。`wechat-bridge` 镜像构建上下文为 **上一级目录**（`context: ..`），因此目录布局需为：与 `Vibe-Trading` **并列** 存在 `wechatbot/nodejs`（当前 monorepo 即如此）。
+`docker-compose.yml` 位于 `Vibe-Trading/`。`wechat-bridge` 镜像构建上下文为 **`Vibe-Trading` 根目录**（`context: .`），SDK 位于 **`./wechatbot/nodejs/`**，与 compose 同级，无需再在上级目录放一份 `wechatbot`。
 
 1. 在 **`Vibe-Trading/`** 下创建 **`.env`**（与 `docker-compose.yml` 同级）：可先 `cp .env.example .env`，再将 `agent/.env.example` 中的 LLM、数据源等合并进去；若此前只用 `agent/.env`，可执行 **`cp agent/.env .env`**，再按需追加 `.env.example` 里「微信桥」相关变量。
 2. 启动 API + 微信桥：
@@ -124,12 +126,12 @@ WECHAT_DATA_ROOT=./wechat-instances WECHAT_INSTANCE_NAME=b \
 - `WeChatBot` 内部同样走分级日志，调试 iLink 时可设 `WECHAT_LOG_LEVEL=debug`。
 - 容器内查看：`docker compose logs -f wechat-bridge`，或 `docker logs <container>`；与 `console` 不同，结构化行便于 `grep` / 日志采集。
 
-仅启动 API（不构建微信桥）：`docker compose up -d`。
+仅启动 API（不启微信桥）：`docker compose up -d vibe-trading`。
 
 ## 依赖关系
 
 ```
-微信 ←→ @wechatbot/wechatbot（仓库 ../../wechatbot/nodejs）
+微信 ←→ @wechatbot/wechatbot（../wechatbot/nodejs）
         ↓ HTTP / SSE
         vibe-trading serve（Python）
 ```
