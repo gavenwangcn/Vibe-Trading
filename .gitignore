@@ -1,4 +1,4 @@
-﻿.venv/
+.venv/
 agent/.venv/
 __pycache__/
 .pytest_cache/
@@ -21,6 +21,12 @@ agent/tests/*_result.json
 .ruff_cache/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+
+wechat-bridge/node_modules/
+wechat-bridge/dist/
+
+# 微信桥多实例数据（WECHAT_DATA_ROOT，默认 ./wechat-instances；若设为 . 则根目录下 a/、b/ 等）
+wechat-instances/
 
 # DuckDB data cache
 data/*.duckdb

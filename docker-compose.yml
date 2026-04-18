@@ -4,13 +4,39 @@ services:
     ports:
       - "8899:8899"
     env_file:
-      - agent/.env
+      - .env
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
       # MCP 等配置持久化；须挂载目录而非单文件，否则容器内 os.replace(.tmp→json) 在 bind 单文件上易 EBUSY
       - ./agent/config:/app/agent/config
     restart: unless-stopped
+
+  wechat-bridge:
+    profiles:
+      - wechat
+    build:
+      context: ..
+      dockerfile: Vibe-Trading/wechat-bridge/Dockerfile
+    # 多微信：宿主机目录 {WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → /data
+    # 需要固定容器名（如 a）时可在 .env 设置 WECHAT_CONTAINER_NAME，且多实例并行时用不同 compose -p 或不同容器名
+    env_file:
+      - .env
+    environment:
+      # 覆盖 .env 中可能指向宿主机的地址，确保容器内访问 API
+      VIBE_TRADING_BASE_URL: http://vibe-trading:8899
+      WECHAT_BRIDGE_STATE_FILE: /data/state.json
+      WECHATBOT_STORAGE_DIR: /data/wechatbot
+      WECHAT_INSTANCE_NAME: ${WECHAT_INSTANCE_NAME:-default}
+    volumes:
+      # 宿主机：{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → 容器 /data（微信凭证、会话映射等）
+      - ${WECHAT_DATA_ROOT:-./wechat-instances}/${WECHAT_INSTANCE_NAME:-default}:/data
+    depends_on:
+      vibe-trading:
+        condition: service_healthy
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
 
   frontend:
     image: node:20
