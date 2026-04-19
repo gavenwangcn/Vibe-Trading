@@ -22,6 +22,7 @@ export default defineConfig({
       "/api": { target: "http://localhost:8899", changeOrigin: true },
       "/system": { target: "http://localhost:8899", changeOrigin: true },
       "/system/mcp": { target: "http://localhost:8899", changeOrigin: true },
+      "/shadow-reports": { target: "http://localhost:8899", changeOrigin: true },
     },
   },
   build: {

@@ -15,6 +15,7 @@ const messages = {
   feat1: "AI Agent", feat1d: "基于 ReAct 推理的自然语言策略生成",
   feat2: "内置回测", feat2d: "3 类数据源：A 股、港美股、加密",
   feat3: "实时流式", feat3d: "可视化查看 Agent 思考、调用工具与迭代",
+  feat4: "策略回放", feat4d: "交易日志分析 + 影子账户：提取你的规则、回测规则化策略、归因盈亏差异",
   score: "Score", passed: "Passed", failed: "Failed", findings: "Findings", recommendations: "Recommendations",
   darkMode: "Dark", lightMode: "Light", language: "Language",
   sessions: "Sessions", newChat: "New Chat", deleteConfirm: "Delete?",

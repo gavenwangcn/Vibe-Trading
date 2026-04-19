@@ -17,6 +17,49 @@ try:
 except ImportError:
     ChatOpenAI = None  # type: ignore
 
+
+if ChatOpenAI is not None:
+    class ChatOpenAIWithReasoning(ChatOpenAI):  # type: ignore[misc,valid-type]
+        """ChatOpenAI that preserves provider reasoning across invoke + stream.
+
+        langchain-openai 0.3.x drops non-standard fields in both paths:
+          * _convert_dict_to_message — invoke / ainvoke
+          * _convert_delta_to_message_chunk — stream / astream
+        Moonshot/DeepSeek emit `reasoning_content`; OpenRouter relays as
+        `reasoning`. Both normalize to additional_kwargs["reasoning_content"],
+        so downstream reads one canonical key.
+        """
+
+        @staticmethod
+        def _capture(src: Any, msg: Any) -> None:
+            if value := src.get("reasoning_content") or src.get("reasoning"):
+                msg.additional_kwargs["reasoning_content"] = value
+
+        def _create_chat_result(self, response, generation_info=None):  # type: ignore[override]
+            result = super()._create_chat_result(response, generation_info)
+            raw = response if isinstance(response, dict) else response.model_dump()
+            for gen, choice in zip(result.generations, raw["choices"]):
+                self._capture(choice["message"], gen.message)
+            return result
+
+        def _convert_chunk_to_generation_chunk(  # type: ignore[override]
+            self,
+            chunk: dict,
+            default_chunk_class: type,
+            base_generation_info: Optional[dict],
+        ):
+            gen = super()._convert_chunk_to_generation_chunk(
+                chunk, default_chunk_class, base_generation_info
+            )
+            if gen is None:
+                return None
+            choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices")
+            if choices:
+                self._capture(choices[0]["delta"], gen.message)
+            return gen
+else:
+    ChatOpenAIWithReasoning = None  # type: ignore
+
 AGENT_DIR = Path(__file__).resolve().parents[2]
 
 # .env search order: ~/.vibe-trading/.env → agent/.env → $CWD/.env
@@ -145,13 +188,16 @@ def build_llm(
     eff_provider = (provider or os.getenv("LANGCHAIN_PROVIDER", "openai")).lower()
     if eff_provider == "minimax" and temperature <= 0.0:
         temperature = 0.01
-    max_retries = int(os.getenv("MAX_RETRIES", "2"))
-    return ChatOpenAI(
+    # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
+    # Moonshot/DeepSeek official APIs emit reasoning by default and ignore this field.
+    effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+    return ChatOpenAIWithReasoning(
         model=name,
         temperature=temperature,
         timeout=timeout,
-        max_retries=max_retries,
+        max_retries=int(os.getenv("MAX_RETRIES", "2")),
         callbacks=callbacks,
+        extra_body={"reasoning": {"effort": effort}} if effort else None,
     )
 
 

@@ -144,7 +144,7 @@ class TestMinimaxTemperature:
             "LANGCHAIN_TEMPERATURE": "0.0",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAI", _FakeChatOpenAI):
+            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         assert captured["temperature"] == 0.01, (
             "MiniMax temperature must be clamped to 0.01 when 0.0 is configured"
@@ -169,9 +169,58 @@ class TestMinimaxTemperature:
             "LANGCHAIN_TEMPERATURE": "0.7",
         }
         with patch.dict(os.environ, env, clear=True):
-            with patch.object(llm_mod, "ChatOpenAI", _FakeChatOpenAI):
+            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
                 build_llm()
         assert captured["temperature"] == 0.7
+
+
+class TestReasoningEffortPassthrough:
+    """LANGCHAIN_REASONING_EFFORT is forwarded as extra_body.reasoning.effort
+    to the underlying OpenAI-compatible client. Used for OpenRouter-style
+    relays that require opt-in to enable thinking."""
+
+    def _capture(self, env: dict[str, str]) -> dict:
+        import src.providers.llm as llm_mod
+        llm_mod._dotenv_loaded = True
+
+        captured: dict = {}
+
+        class _FakeChatOpenAI:
+            def __init__(self, **kwargs: object) -> None:
+                captured.update(kwargs)
+
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(llm_mod, "ChatOpenAIWithReasoning", _FakeChatOpenAI):
+                build_llm()
+        return captured
+
+    def test_effort_unset_leaves_extra_body_none(self) -> None:
+        captured = self._capture({
+            "LANGCHAIN_PROVIDER": "openai",
+            "OPENAI_API_KEY": "sk-test",
+            "LANGCHAIN_MODEL_NAME": "gpt-4",
+        })
+        assert captured["extra_body"] is None
+
+    def test_effort_medium_forwarded_as_extra_body(self) -> None:
+        captured = self._capture({
+            "LANGCHAIN_PROVIDER": "openrouter",
+            "OPENROUTER_API_KEY": "or-test",
+            "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+            "LANGCHAIN_MODEL_NAME": "moonshotai/kimi-k2-thinking",
+            "LANGCHAIN_REASONING_EFFORT": "medium",
+        })
+        assert captured["extra_body"] == {"reasoning": {"effort": "medium"}}
+
+    def test_effort_case_insensitive(self) -> None:
+        captured = self._capture({
+            "LANGCHAIN_PROVIDER": "openrouter",
+            "OPENROUTER_API_KEY": "or-test",
+            "OPENROUTER_BASE_URL": "https://openrouter.ai/api/v1",
+            "LANGCHAIN_MODEL_NAME": "moonshotai/kimi-k2-thinking",
+            "LANGCHAIN_REASONING_EFFORT": "HIGH",
+        })
+        assert captured["extra_body"]["reasoning"]["effort"] == "high"
 
 
 class TestExtractBalancedJson:

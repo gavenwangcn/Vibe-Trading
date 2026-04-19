@@ -11,6 +11,18 @@ from typing import Any, Dict, List, Optional
 from src.providers.llm import build_llm
 
 
+def _dedupe_finish_reason(raw: str) -> str:
+    """Relays (OpenRouter) emit finish_reason per chunk; AIMessageChunk.__add__
+    concatenates into 'stopstop', 'tool_callstool_calls', etc. Return the
+    canonical suffix so ReAct equality checks survive.
+    """
+    return next(
+        (m for m in ("tool_calls", "function_call", "content_filter", "length", "stop")
+         if raw.endswith(m)),
+        raw,
+    )
+
+
 @dataclass
 class ToolCallRequest:
     """Tool call request returned by the LLM.
@@ -38,6 +50,7 @@ class LLMResponse:
 
     content: Optional[str] = None
     tool_calls: List[ToolCallRequest] = field(default_factory=list)
+    reasoning_content: Optional[str] = None
     finish_reason: str = "stop"
 
     @property
@@ -139,22 +152,19 @@ class ChatLLM:
 
     @staticmethod
     def _parse_response(ai_message: Any) -> LLMResponse:
-        """Convert a LangChain AIMessage to ``LLMResponse``.
+        """Convert a LangChain AIMessage (or AIMessageChunk) to ``LLMResponse``.
 
-        Args:
-            ai_message: LangChain AIMessage instance.
-
-        Returns:
-            ``LLMResponse``.
+        Single source for reasoning: ``additional_kwargs["reasoning_content"]``,
+        populated by ``ChatOpenAIWithReasoning`` on both stream and non-stream paths.
         """
-        content = ai_message.content if hasattr(ai_message, "content") else None
-        raw_calls = getattr(ai_message, "tool_calls", None) or []
-        tool_calls = []
-        for tc in raw_calls:
-            tool_calls.append(ToolCallRequest(
-                id=tc.get("id", ""),
-                name=tc.get("name", ""),
-                arguments=tc.get("args", {}),
-            ))
-        finish = getattr(ai_message, "response_metadata", {}).get("finish_reason", "stop")
-        return LLMResponse(content=content, tool_calls=tool_calls, finish_reason=finish)
+        return LLMResponse(
+            content=ai_message.content,
+            tool_calls=[
+                ToolCallRequest(id=tc["id"], name=tc["name"], arguments=tc["args"])
+                for tc in ai_message.tool_calls
+            ],
+            reasoning_content=ai_message.additional_kwargs.get("reasoning_content"),
+            finish_reason=_dedupe_finish_reason(
+                ai_message.response_metadata.get("finish_reason", "stop")
+            ),
+        )
