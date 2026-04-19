@@ -169,4 +169,20 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `fund_selection_panel.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `fund_screener` | `fund-analysis`、`fundamental-filter` |
+| `attribution_analyst` | `performance-attribution`、`fund-analysis`、`multi-factor` |
+| `fof_optimizer` | `asset-allocation`、`risk-analysis`、`strategy-generate`、`etf-analysis` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`etf-analysis`、`fund-analysis`、`fundamental-filter`、`multi-factor`、`performance-attribution`、`risk-analysis`、`strategy-generate`
+
+<!-- /swarm-skills-doc -->
+
 *与 `fund_selection_panel.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

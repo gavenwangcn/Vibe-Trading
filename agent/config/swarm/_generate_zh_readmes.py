@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""One-off generator: swarm/*.yaml -> *.zh.md 中文说明（可重复运行以同步结构）."""
+"""One-off generator: swarm/*.yaml -> *.zh.md 中文说明（可重复运行以同步结构）。
+
+手工维护的 *.zh.md 若需与 YAML 中 agents.skills 对齐末尾「本工作流使用的 Skill 技能」区块，
+可运行同目录下 `_patch_zh_skills_sections.py`。
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,8 @@ import re
 from pathlib import Path
 
 import yaml
+
+from _swarm_zh_skills import skills_section_markdown
 
 ROOT = Path(__file__).resolve().parent
 
@@ -227,6 +233,10 @@ def build_md(data: dict) -> str:
             lines.append(f"| `{vn}` | {vd} | {req} |")
         lines.append("")
 
+    lines.append("---")
+    lines.append("")
+    lines.append(skills_section_markdown(data, name, wrap_markers=False))
+    lines.append("")
     lines.append("---")
     lines.append("*本文件由 `agent/config/swarm/_generate_zh_readmes.py` 根据同名 YAML 自动生成，便于中文阅读；执行逻辑以源码与 YAML 为准。*")
     lines.append("")

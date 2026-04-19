@@ -166,4 +166,20 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `ml_quant_lab.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `feature_engineer` | `ml-strategy`、`factor-research`、`multi-factor` |
+| `data_scientist` | `ml-strategy`、`quant-statistics` |
+| `backtest_engineer` | `strategy-generate`、`backtest-diagnose`、`quant-statistics` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `backtest-diagnose`、`factor-research`、`ml-strategy`、`multi-factor`、`quant-statistics`、`strategy-generate`
+
+<!-- /swarm-skills-doc -->
+
 *与 `ml_quant_lab.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

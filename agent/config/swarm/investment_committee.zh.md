@@ -195,4 +195,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `investment_committee.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `bull_advocate` | `technical-basic`、`fundamental-filter`、`yfinance`、`earnings-revision`、`sentiment-analysis` |
+| `bear_advocate` | `technical-basic`、`fundamental-filter`、`yfinance`、`risk-analysis`、`volatility` |
+| `risk_officer` | `risk-analysis`、`volatility`、`correlation-analysis` |
+| `portfolio_manager` | `strategy-generate`、`asset-allocation` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`correlation-analysis`、`earnings-revision`、`fundamental-filter`、`risk-analysis`、`sentiment-analysis`、`strategy-generate`、`technical-basic`、`volatility`、`yfinance`
+
+<!-- /swarm-skills-doc -->
+
 *与 `investment_committee.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

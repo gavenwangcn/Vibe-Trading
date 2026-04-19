@@ -202,4 +202,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `portfolio_review_board.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `attribution_analyst` | `performance-attribution`、`multi-factor` |
+| `risk_inspector` | `risk-analysis`、`volatility` |
+| `execution_analyst` | `execution-model`、`market-microstructure` |
+| `chief_investment_officer` | `asset-allocation`、`risk-analysis` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`execution-model`、`market-microstructure`、`multi-factor`、`performance-attribution`、`risk-analysis`、`volatility`
+
+<!-- /swarm-skills-doc -->
+
 *与 `portfolio_review_board.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

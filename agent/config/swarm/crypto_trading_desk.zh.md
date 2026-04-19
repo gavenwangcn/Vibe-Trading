@@ -262,4 +262,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `crypto_trading_desk.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `funding_basis_analyst` | `perp-funding-basis`、`okx-market`、`crypto-derivatives` |
+| `liquidation_analyst` | `liquidation-heatmap`、`market-microstructure`、`execution-model` |
+| `flow_analyst` | `stablecoin-flow`、`onchain-analysis`、`token-unlock-treasury`、`defi-yield` |
+| `desk_risk_manager` | `risk-analysis`、`asset-allocation`、`volatility`、`hedging-strategy` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`crypto-derivatives`、`defi-yield`、`execution-model`、`hedging-strategy`、`liquidation-heatmap`、`market-microstructure`、`okx-market`、`onchain-analysis`、`perp-funding-basis`、`risk-analysis`、`stablecoin-flow`、`token-unlock-treasury`、`volatility`
+
+<!-- /swarm-skills-doc -->
+
 *与 `crypto_trading_desk.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

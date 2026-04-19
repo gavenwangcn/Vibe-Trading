@@ -256,4 +256,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `factor_research_committee.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `factor_miner` | `factor-research`、`multi-factor` |
+| `factor_validator` | `quant-statistics`、`factor-research` |
+| `factor_combiner` | `multi-factor`、`strategy-generate` |
+| `backtest_reviewer` | `backtest-diagnose`、`quant-statistics` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `backtest-diagnose`、`factor-research`、`multi-factor`、`quant-statistics`、`strategy-generate`
+
+<!-- /swarm-skills-doc -->
+
 *与 `factor_research_committee.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

@@ -184,4 +184,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `global_allocation_committee.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `a_share_analyst` | `tushare`、`technical-basic`、`fundamental-filter`、`hk-connect-flow`、`sector-rotation`、`multi-factor` |
+| `crypto_analyst` | `okx-market`、`perp-funding-basis`、`stablecoin-flow`、`crypto-derivatives`、`volatility`、`onchain-analysis` |
+| `us_hk_analyst` | `yfinance`、`us-etf-flow`、`earnings-revision`、`adr-hshare`、`hk-connect-flow`、`technical-basic` |
+| `allocator` | `asset-allocation`、`risk-analysis`、`correlation-analysis`、`strategy-generate` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `adr-hshare`、`asset-allocation`、`correlation-analysis`、`crypto-derivatives`、`earnings-revision`、`fundamental-filter`、`hk-connect-flow`、`multi-factor`、`okx-market`、`onchain-analysis`、`perp-funding-basis`、`risk-analysis`、`sector-rotation`、`stablecoin-flow`、`strategy-generate`、`technical-basic`、`tushare`、`us-etf-flow`、`volatility`、`yfinance`
+
+<!-- /swarm-skills-doc -->
+
 *与 `global_allocation_committee.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

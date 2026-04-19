@@ -196,4 +196,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `macro_strategy_forum.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `global_economist` | `global-macro`、`web-reader`、`geopolitical-risk` |
+| `domestic_economist` | `macro-analysis`、`tushare` |
+| `policy_analyst` | `regulatory-knowledge`、`sector-rotation`、`web-reader` |
+| `chief_strategist` | `asset-allocation`、`macro-analysis` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`geopolitical-risk`、`global-macro`、`macro-analysis`、`regulatory-knowledge`、`sector-rotation`、`tushare`、`web-reader`
+
+<!-- /swarm-skills-doc -->
+
 *与 `macro_strategy_forum.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

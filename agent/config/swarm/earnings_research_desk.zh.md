@@ -263,4 +263,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `earnings_research_desk.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `fundamental_analyst` | `edgar-sec-filings`、`financial-statement`、`yfinance`、`fundamental-filter`、`valuation-model` |
+| `revision_tracker` | `earnings-revision`、`earnings-forecast` |
+| `event_options_analyst` | `options-advanced`、`options-strategy`、`event-driven`、`volatility` |
+| `earnings_strategist` | `strategy-generate`、`risk-analysis`、`report-generate` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `earnings-forecast`、`earnings-revision`、`edgar-sec-filings`、`event-driven`、`financial-statement`、`fundamental-filter`、`options-advanced`、`options-strategy`、`report-generate`、`risk-analysis`、`strategy-generate`、`valuation-model`、`volatility`、`yfinance`
+
+<!-- /swarm-skills-doc -->
+
 *与 `earnings_research_desk.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

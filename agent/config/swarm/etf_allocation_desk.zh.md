@@ -203,4 +203,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `etf_allocation_desk.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `etf_screener` | `etf-analysis`、`fund-analysis`、`tushare` |
+| `macro_allocator` | `macro-analysis`、`asset-allocation`、`global-macro` |
+| `risk_budgeter` | `risk-analysis`、`volatility`、`etf-analysis` |
+| `portfolio_optimizer` | `etf-analysis`、`strategy-generate`、`asset-allocation` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `asset-allocation`、`etf-analysis`、`fund-analysis`、`global-macro`、`macro-analysis`、`risk-analysis`、`strategy-generate`、`tushare`、`volatility`
+
+<!-- /swarm-skills-doc -->
+
 *与 `etf_allocation_desk.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

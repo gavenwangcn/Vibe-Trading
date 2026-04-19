@@ -294,4 +294,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `credit_research_team.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `credit_analyst` | `credit-analysis`、`financial-statement` |
+| `rate_analyst` | `credit-analysis`、`macro-analysis` |
+| `sector_credit_analyst` | `credit-analysis`、`sector-rotation`、`regulatory-knowledge` |
+| `fixed_income_strategist` | `credit-analysis`、`strategy-generate`、`risk-analysis` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `credit-analysis`、`financial-statement`、`macro-analysis`、`regulatory-knowledge`、`risk-analysis`、`sector-rotation`、`strategy-generate`
+
+<!-- /swarm-skills-doc -->
+
 *与 `credit_research_team.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*

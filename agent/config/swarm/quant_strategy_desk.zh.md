@@ -182,4 +182,21 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `quant_strategy_desk.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `screener` | `tushare`、`fundamental-filter` |
+| `factor_miner` | `multi-factor`、`factor-research` |
+| `backtester` | `strategy-generate`、`technical-basic` |
+| `risk_auditor` | `volatility` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `factor-research`、`fundamental-filter`、`multi-factor`、`strategy-generate`、`technical-basic`、`tushare`、`volatility`
+
+<!-- /swarm-skills-doc -->
+
 *本说明与 `quant_strategy_desk.yaml` 一一对应；运行与工具行为以仓库内 YAML 及源码为准。*

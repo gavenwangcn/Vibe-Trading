@@ -171,4 +171,20 @@ flowchart TB
 
 ---
 
+<!-- swarm-skills-doc -->
+
+## 本工作流使用的 Skill 技能
+
+以下技能来自 `commodity_research_team.yaml` 中各代理的 `skills` 字段，运行时由代理通过 `load_skill()` 按需加载。
+
+| 代理 ID | 绑定的 Skill 技能 |
+| --- | --- |
+| `supply_analyst` | `commodity-analysis`、`web-reader`、`geopolitical-risk` |
+| `demand_analyst` | `commodity-analysis`、`seasonal`、`global-macro` |
+| `cycle_strategist` | `commodity-analysis`、`seasonal`、`strategy-generate` |
+
+**本工作流涉及的全部 Skill（去重，按字母序）：** `commodity-analysis`、`geopolitical-risk`、`global-macro`、`seasonal`、`strategy-generate`、`web-reader`
+
+<!-- /swarm-skills-doc -->
+
 *与 `commodity_research_team.yaml` 一一对应；运行与工具以仓库内 YAML 及源码为准。*
