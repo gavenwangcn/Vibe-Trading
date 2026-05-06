@@ -73,6 +73,7 @@ class SwarmRuntime:
         preset_name: str,
         user_vars: dict[str, str],
         live_callback: Callable | None = None,
+        include_shell_tools: bool = False,
     ) -> SwarmRun:
         """Start a swarm run. Returns immediately, execution happens in background.
 
@@ -80,6 +81,7 @@ class SwarmRuntime:
             preset_name: YAML preset name to execute.
             user_vars: User-provided variables for prompt templates.
             live_callback: Optional callback invoked for each event in real-time.
+            include_shell_tools: Whether workers may register shell tools.
 
         Returns:
             The created SwarmRun instance (status=pending initially).
@@ -100,7 +102,7 @@ class SwarmRuntime:
 
         thread = threading.Thread(
             target=self._execute_run,
-            args=(run, cancel_event),
+            args=(run, cancel_event, include_shell_tools),
             name=f"swarm-{run.id}",
             daemon=True,
         )
@@ -169,7 +171,12 @@ class SwarmRuntime:
             timestamp=now_shanghai_iso(),
         )
 
-    def _execute_run(self, run: SwarmRun, cancel_event: threading.Event) -> None:
+    def _execute_run(
+        self,
+        run: SwarmRun,
+        cancel_event: threading.Event,
+        include_shell_tools: bool = False,
+    ) -> None:
         """Core orchestration loop (runs in background thread).
 
         Steps:
@@ -185,6 +192,7 @@ class SwarmRuntime:
         Args:
             run: SwarmRun to execute.
             cancel_event: Threading event for cancellation signalling.
+            include_shell_tools: Whether workers may register shell tools.
         """
         run_id = run.id
         run_dir = self._store.run_dir(run_id)
@@ -233,6 +241,7 @@ class SwarmRuntime:
                     task_summaries=task_summaries,
                     run_dir=run_dir,
                     cancel_event=cancel_event,
+                    include_shell_tools=include_shell_tools,
                 )
 
                 # Process results
@@ -321,6 +330,7 @@ class SwarmRuntime:
         task_summaries: dict[str, str],
         run_dir: Path,
         cancel_event: threading.Event,
+        include_shell_tools: bool = False,
     ) -> dict[str, WorkerResult]:
         """Execute all tasks in a single layer in parallel, with retry on failure.
 
@@ -335,6 +345,7 @@ class SwarmRuntime:
             task_summaries: Accumulated task summaries from previous layers.
             run_dir: Run directory path.
             cancel_event: Cancellation event.
+            include_shell_tools: Whether workers may register shell tools.
 
         Returns:
             Mapping of task_id -> WorkerResult for all tasks in this layer.
@@ -344,10 +355,14 @@ class SwarmRuntime:
         def _event_callback(event: SwarmEvent) -> None:
             self._emit_event(run.id, event)
 
-        with ThreadPoolExecutor(max_workers=self._max_workers) as executor:
-            futures: dict[Future[WorkerResult], str] = {}
-            layer_budget = 0  # seconds — max per-task (retries × timeout) across layer
-
+        # Manual executor lifecycle (not `with`) so KeyboardInterrupt and
+        # the layer deadline don't block main on `shutdown(wait=True)` —
+        # `wait=False + cancel_futures=True` lets pending work drop and
+        # the CLI return immediately. Running workers finish naturally.
+        executor = ThreadPoolExecutor(max_workers=self._max_workers)
+        futures: dict[Future[WorkerResult], str] = {}
+        layer_budget = 0  # seconds — max per-task (retries × timeout) across layer
+        try:
             for tid in layer_task_ids:
                 task = task_store.load_task(tid)
                 agent_spec = agent_map.get(task.agent_id)
@@ -383,6 +398,7 @@ class SwarmRuntime:
                     run_dir=run_dir,
                     event_callback=_event_callback,
                     run_id=run.id,
+                    include_shell_tools=include_shell_tools,
                 )
                 futures[future] = tid
                 per_task_budget = agent_spec.timeout_seconds * (agent_spec.max_retries + 1)
@@ -418,6 +434,12 @@ class SwarmRuntime:
                         status="timeout", summary="",
                         error=f"Worker exceeded layer deadline of {layer_deadline}s",
                     )
+        except KeyboardInterrupt:
+            cancel_event.set()
+            logger.warning("Swarm layer interrupted — cancelling pending workers")
+            raise
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
         return results
 
@@ -430,6 +452,7 @@ class SwarmRuntime:
         run_dir: Path,
         event_callback: Callable[[SwarmEvent], None] | None,
         run_id: str,
+        include_shell_tools: bool = False,
     ) -> WorkerResult:
         """Run a worker with automatic retry on failure.
 
@@ -445,6 +468,7 @@ class SwarmRuntime:
             run_dir: Run directory path.
             event_callback: Optional event callback.
             run_id: Run identifier for event emission.
+            include_shell_tools: Whether the worker may register shell tools.
 
         Returns:
             WorkerResult from the last attempt.
@@ -478,6 +502,7 @@ class SwarmRuntime:
                 user_vars=user_vars,
                 run_dir=run_dir,
                 event_callback=event_callback,
+                include_shell_tools=include_shell_tools,
             )
 
             cumulative_input_tokens += result.input_tokens

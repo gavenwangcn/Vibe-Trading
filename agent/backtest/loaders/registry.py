@@ -52,6 +52,7 @@ def _ensure_registered() -> None:
         "backtest.loaders.yfinance_loader",
         "backtest.loaders.akshare_loader",
         "backtest.loaders.ccxt_loader",
+        "backtest.loaders.futu",
     ]
     import importlib
     for mod in _loader_modules:
@@ -68,8 +69,8 @@ def _ensure_registered() -> None:
 FALLBACK_CHAINS: dict[str, list[str]] = {
     "a_share":   ["tushare", "akshare"],
     "us_equity": ["yfinance", "akshare"],
-    "hk_equity": ["yfinance", "akshare"],
-    "crypto":    ["ccxt", "okx"],
+    "hk_equity": ["yfinance", "futu", "akshare"],
+    "crypto":    ["okx", "ccxt"],
     "futures":   ["tushare", "akshare"],
     "fund":      ["tushare", "akshare"],
     "macro":     ["akshare", "tushare"],
@@ -98,8 +99,15 @@ def resolve_loader(market: str) -> Any:
     for name in chain:
         if name not in LOADER_REGISTRY:
             continue
-        loader = LOADER_REGISTRY[name]()
         tried.append(name)
+        # Issue #50 — some loaders (e.g. Tushare) call into the SDK during
+        # __init__ and raise on missing credentials. Treat that the same as
+        # is_available()=False so the fallback chain keeps walking.
+        try:
+            loader = LOADER_REGISTRY[name]()
+        except Exception as exc:
+            logger.debug("loader %s failed to construct: %s", name, exc)
+            continue
         if loader.is_available():
             return loader
     raise NoAvailableSourceError(
@@ -125,8 +133,12 @@ def get_loader_cls_with_fallback(source: str) -> Type[Any]:
         raise NoAvailableSourceError(f"Unknown data source: {source}")
 
     loader_cls = LOADER_REGISTRY[source]
-    instance = loader_cls()
-    if instance.is_available():
+    try:
+        instance = loader_cls()
+    except Exception as exc:
+        logger.debug("loader %s failed to construct: %s", source, exc)
+        instance = None
+    if instance is not None and instance.is_available():
         return loader_cls
 
     # Source unavailable — try same-market fallback

@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -56,6 +57,129 @@ _VERSION = "0.1.5"
 # Agent color assignments for swarm display
 _AGENT_STYLES = ["cyan", "magenta", "green", "yellow", "blue", "bright_red", "bright_cyan", "bright_magenta"]
 _agent_color_map: dict[str, str] = {}
+
+_HAS_PROMPT_TOOLKIT = False
+try:
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.history import InMemoryHistory
+
+    _HAS_PROMPT_TOOLKIT = True
+except ImportError:
+    pass
+
+
+class _SessionStats:
+    """Mutable container for interactive session statistics.
+
+    Shared between the status bar renderer and the agent loop so that
+    tool callbacks can update counters in-place.
+    """
+
+    __slots__ = ("session_start", "last_elapsed", "total_tool_ms", "tool_count")
+
+    def __init__(self, session_start: float) -> None:
+        self.session_start = session_start
+        self.last_elapsed: Optional[float] = None
+        self.total_tool_ms = 0
+        self.tool_count = 0
+
+
+def _build_status_parts(stats: _SessionStats) -> list[str]:
+    """Build plain-text status bar segments.
+
+    Args:
+        stats: Session statistics.
+
+    Returns:
+        List of status text segments.
+    """
+    provider = os.getenv("LANGCHAIN_PROVIDER", "")
+    model = os.getenv("LANGCHAIN_MODEL_NAME", "")
+    model_short = model.split("/")[-1] if "/" in model else model
+    label = f"{provider}/{model_short}" if provider else model_short or "unknown"
+
+    session_s = int(time.monotonic() - stats.session_start)
+    mins, secs = divmod(session_s, 60)
+    session_str = f"{mins}m{secs:02d}s" if mins else f"{secs}s"
+
+    parts = [label, session_str]
+
+    if stats.last_elapsed is not None:
+        parts.append(f"last {stats.last_elapsed:.1f}s")
+
+    if stats.tool_count > 0:
+        total_s = stats.total_tool_ms / 1000
+        parts.append(f"{stats.tool_count} tools ({total_s:.1f}s)")
+
+    return parts
+
+
+def _ptk_toolbar(stats: _SessionStats) -> FormattedText:
+    """prompt_toolkit bottom_toolbar callback — called on every render.
+
+    Args:
+        stats: Session statistics.
+
+    Returns:
+        FormattedText for the toolbar.
+    """
+    segments = _build_status_parts(stats)
+    text = " │ ".join(segments)
+    return FormattedText([("class:bottom-toolbar.text", f" {text} ")])
+
+
+def _print_status_bar(stats: _SessionStats) -> None:
+    """Print a static status bar using Rich (fallback without prompt_toolkit).
+
+    Args:
+        stats: Session statistics.
+    """
+    parts = _build_status_parts(stats)
+    bar = "[dim] │ [/dim]".join(
+        f"[bold]{parts[0]}[/bold]" if i == 0 else p for i, p in enumerate(parts)
+    )
+    console.print(bar)
+
+
+def _create_prompt_session(stats: _SessionStats) -> Any:
+    """Create a prompt_toolkit PromptSession with history and live toolbar.
+
+    Args:
+        stats: Session statistics for the live bottom toolbar.
+
+    Returns:
+        A PromptSession instance, or None if prompt_toolkit is not available.
+    """
+    if not _HAS_PROMPT_TOOLKIT:
+        return None
+    return PromptSession(
+        history=InMemoryHistory(),
+        bottom_toolbar=lambda: _ptk_toolbar(stats),
+        refresh_interval=1.0,
+    )
+
+
+def _read_input(prompt_session: Any, prompt_str: str = "> ") -> str:
+    """Read user input with arrow key support if prompt_toolkit is available.
+
+    Falls back to Rich Prompt.ask() when prompt_toolkit is not installed or
+    when stdin is not a tty.
+
+    Args:
+        prompt_session: A prompt_toolkit PromptSession, or None.
+        prompt_str: Prompt text to display.
+
+    Returns:
+        User input string (not stripped).
+
+    Raises:
+        EOFError: When the user presses Ctrl-D.
+        KeyboardInterrupt: When the user presses Ctrl-C.
+    """
+    if prompt_session is not None and sys.stdin.isatty():
+        return prompt_session.prompt(prompt_str)
+    return Prompt.ask(f"[bold]{prompt_str}[/bold]")
 
 
 def serve_main(argv: list[str] | None = None) -> int:
@@ -283,7 +407,7 @@ def _run_agent(
 
     pm = PersistentMemory()
     agent = AgentLoop(
-        registry=build_registry(persistent_memory=pm),
+        registry=build_registry(persistent_memory=pm, include_shell_tools=True),
         llm=ChatLLM(),
         event_callback=on_event,
         max_iterations=max_iter,
@@ -295,23 +419,80 @@ def _run_agent(
     return agent.run(user_message=prompt, history=history)
 
 
+def _build_benchmark_table(m: dict) -> Optional[Table]:
+    """Build a benchmark comparison table from metrics dict.
+
+    Args:
+        m: Metrics dictionary (from _read_metrics or result dict).
+
+    Returns:
+        Rich Table, or None if no benchmark data is present.
+    """
+    bench_ticker  = m.get("benchmark_ticker")
+    bench_ret_str = m.get("benchmark_return")
+    bench_ret_raw = m.get("_benchmark_return_raw")
+
+    # Fall back to equity.csv if benchmark cols not in metrics.csv yet
+    if not bench_ticker:
+        return None
+
+    # Parse benchmark return
+    if bench_ret_raw is not None:
+        bench_ret = bench_ret_raw
+    elif bench_ret_str is not None:
+        try:
+            bench_ret = float(bench_ret_str)
+        except (ValueError, TypeError):
+            bench_ret = None
+    else:
+        bench_ret = None
+
+    strategy_ret_str = m.get("total_return")
+    strategy_ret     = float(strategy_ret_str) if strategy_ret_str else None
+
+    table = Table(show_header=False, padding=(0, 2))
+    table.add_column("Label", style="dim", width=20)
+    table.add_column("Value", style="white no_wrap")
+
+    table.add_row("[dim]Benchmark[/dim]",  bench_ticker)
+
+    if bench_ret is not None:
+        table.add_row("[dim]Benchmark Return[/dim]", f"{bench_ret * 100:+.2f}%")
+
+    if strategy_ret is not None and bench_ret is not None:
+        excess = strategy_ret - bench_ret
+        sign   = "+" if excess >= 0 else ""
+        style  = "green" if excess >= 0 else "red"
+        table.add_row(
+            "[dim]vs Benchmark[/dim]",
+            f"[{style}]{sign}{excess * 100:+.2f}%[/{style}]",
+        )
+
+    ir_str = m.get("information_ratio")
+    if ir_str:
+        table.add_row("[dim]Info Ratio[/dim]", ir_str)
+
+    excess_str = m.get("excess_return")
+    if excess_str and excess_str != "0" and excess_str != "0.0000":
+        table.add_row("[dim]Excess Return[/dim]", f"{float(excess_str) * 100:+.2f}%")
+
+    return table
+
+
 def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> None:
     """Print execution result panel."""
     status = result.get("status", "unknown")
     ok = status == "success"
     style = "green" if ok else "red"
-
     lines = [f"Status: [bold {style}]{status.upper()}[/bold {style}]  Time: {elapsed:.1f}s"]
-
     if result.get("run_id"):
         lines.append(f"ID: {result['run_id']}")
-
     review = result.get("review")
     if review and review.get("overall_score") is not None:
         check = "\u2713" if review.get("passed") else "\u2717"
         lines.append(f"Review: {review['overall_score']}pts {check}")
-
     run_dir = result.get("run_dir")
+    m = {}
     if run_dir:
         m = _read_metrics(Path(run_dir) / "artifacts" / "metrics.csv")
         parts = [f"{k}={m[k]}" for k in ("total_return", "sharpe", "max_drawdown", "trade_count") if k in m]
@@ -322,6 +503,17 @@ def _print_result(result: dict, elapsed: float, *, no_rich: bool = False) -> Non
         lines.append(f"Reason: {result['reason']}")
 
     console.print(Panel("\n".join(lines), border_style=style, title="Result"))
+
+    # ── Benchmark comparison panel ─────────────────────────────────────────────
+    bench_table = _build_benchmark_table(m)
+    if bench_table:
+        console.print(Panel(
+            bench_table,
+            border_style="cyan",
+            title="Benchmark Comparison",
+            padding=(0, 1),
+        ))
+    # ── Benchmark comparison panel ─────────────────────────────────────────
 
     content = result.get("content", "").strip()
     if content:
@@ -479,6 +671,7 @@ def _print_help() -> None:
         ("/continue <run_id> <prompt>", "Continue an existing run"),
         ("/swarm", "List swarm team presets"),
         ("/swarm run <preset> {vars}", "Run a swarm team"),
+        ("/swarm inspect <preset>", "Inspect preset DAG and validation"),
         ("/swarm list", "List swarm run history"),
         ("/swarm show <run_id>", "Show swarm run details"),
         ("/swarm cancel <run_id>", "Cancel a swarm run"),
@@ -587,6 +780,11 @@ def _handle_swarm_command(arg: str) -> None:
         preset = run_parts[0]
         vars_json = run_parts[1] if len(run_parts) > 1 else None
         cmd_swarm_run_live(preset, vars_json)
+    elif sub == "inspect":
+        if sub_arg:
+            cmd_swarm_inspect(sub_arg)
+        else:
+            console.print("[red]Usage: /swarm inspect <preset>[/red]")
     elif sub == "list":
         cmd_swarm_list()
     elif sub == "show":
@@ -613,10 +811,14 @@ def cmd_interactive(max_iter: int) -> None:
         return
 
     history: List[Dict[str, str]] = []
+    stats = _SessionStats(session_start=time.monotonic())
+    prompt_session = _create_prompt_session(stats)
 
     while True:
+        if prompt_session is None:
+            _print_status_bar(stats)
         try:
-            user_input = Prompt.ask("\n[bold]>[/bold]").strip()
+            user_input = _read_input(prompt_session).strip()
         except (KeyboardInterrupt, EOFError):
             break
 
@@ -634,14 +836,90 @@ def cmd_interactive(max_iter: int) -> None:
             continue
 
         # Natural language -> agent
-        start = time.perf_counter()
-        try:
-            result = _run_agent(user_input, history=history[-6:], max_iter=max_iter)
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted[/yellow]")
-            continue
+        from src.tools import build_registry
+        from src.providers.chat import ChatLLM
+        from src.agent.loop import AgentLoop
+        from src.memory.persistent import PersistentMemory
 
-        _print_result(result, time.perf_counter() - start)
+        run_start = time.perf_counter()
+        run_state = {"label": "connecting"}
+        pending_tool = {"name": "", "args_preview": ""}
+        stop_timer = threading.Event()
+
+        def _status_event_callback(event_type: str, data: Dict[str, Any]) -> None:
+            if event_type == "tool_result":
+                stats.total_tool_ms += data.get("elapsed_ms", 0)
+                stats.tool_count += 1
+                run_state["label"] = "thinking"
+            elif event_type == "tool_call":
+                run_state["label"] = f"running {data.get('tool', '?')}"
+            elif event_type == "text_delta":
+                run_state["label"] = "streaming"
+            elif event_type == "compact":
+                run_state["label"] = "compressing context"
+            _on_event_interactive(event_type, data)
+
+        def _on_event_interactive(event_type: str, data: Dict[str, Any]) -> None:
+            if event_type == "text_delta":
+                console.print(data.get("delta", ""), end="", style="dim")
+            elif event_type == "thinking_done":
+                console.print()
+            elif event_type == "tool_call":
+                pending_tool["name"] = data.get("tool", "")
+                pending_tool["args_preview"] = _format_tool_call_args(
+                    data.get("tool", ""), data.get("arguments", {})
+                )
+            elif event_type == "tool_result":
+                tool = data.get("tool", "") or pending_tool["name"]
+                name = tool
+                args_preview = pending_tool["args_preview"]
+                status_str = data.get("status", "ok")
+                elapsed_ms = data.get("elapsed_ms", 0)
+                elapsed_s = elapsed_ms / 1000
+                ok = status_str == "ok"
+                mark = "[green]\u2713[/green]" if ok else "[red]\u2717[/red]"
+                preview = _format_tool_result_preview(tool, status_str, data.get("preview", ""))
+                suffix = f"  {preview}" if preview else ""
+                console.print(f"  [cyan]\u25b6 {name}[/cyan]{args_preview}  {mark} [dim]{elapsed_s:.1f}s[/dim]{suffix}")
+                pending_tool["name"] = ""
+                pending_tool["args_preview"] = ""
+            elif event_type == "compact":
+                tokens = data.get("tokens_before", "?")
+                console.print(f"\n  [yellow]\u27f3 context compressed[/yellow] [dim]({tokens} tokens \u2192 summary)[/dim]\n")
+
+        def _timer_loop(status_ref: Any) -> None:
+            while not stop_timer.is_set():
+                elapsed = time.perf_counter() - run_start
+                label = run_state["label"]
+                try:
+                    status_ref.update(f"[bold cyan]\u23f3 {label}... {elapsed:.1f}s[/bold cyan]")
+                except Exception:
+                    pass
+                stop_timer.wait(1.0)
+
+        with console.status("[bold cyan]\u23f3 Connecting...[/bold cyan]") as spinner:
+            timer_thread = threading.Thread(target=_timer_loop, args=(spinner,), daemon=True)
+            timer_thread.start()
+
+            try:
+                pm = PersistentMemory()
+                agent = AgentLoop(
+                    registry=build_registry(persistent_memory=pm),
+                    llm=ChatLLM(),
+                    event_callback=_status_event_callback,
+                    max_iterations=max_iter,
+                    persistent_memory=pm,
+                )
+                result = agent.run(user_message=user_input, history=history[-6:])
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Interrupted[/yellow]")
+                continue
+            finally:
+                stop_timer.set()
+                timer_thread.join(timeout=1)
+
+        stats.last_elapsed = time.perf_counter() - run_start
+        _print_result(result, stats.last_elapsed)
         history.append({"role": "user", "content": user_input})
         if result.get("content"):
             history.append({"role": "assistant", "content": result["content"]})
@@ -855,7 +1133,12 @@ def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
     dashboard = _SwarmDashboard(preset, "")
 
     try:
-        run = runtime.start_run(preset, user_vars, live_callback=dashboard.handle_event)
+        run = runtime.start_run(
+            preset,
+            user_vars,
+            live_callback=dashboard.handle_event,
+            include_shell_tools=True,
+        )
     except FileNotFoundError as exc:
         console.print(f"[red]{exc}[/red]")
         return
@@ -952,7 +1235,7 @@ def cmd_list(limit: int = 20) -> None:
         st = _read_json(d / "state.json").get("status", "?")
         m = _read_metrics(d / "artifacts" / "metrics.csv")
         c = "green" if st == "success" else "red" if st == "failed" else "dim"
-        table.add_row(d.name, f"[{c}]{st}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
+        table.add_row(d.name, f"[{c}]{st.upper()}[/{c}]", m.get("total_return", ""), m.get("sharpe", ""), (_read_json(d / "req.json").get("prompt") or "")[:40])
 
     console.print(table)
 
@@ -970,8 +1253,9 @@ def cmd_show(run_id: str) -> None:
 
     st = state.get("status", "unknown")
     c = "green" if st == "success" else "red"
-    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]", f"[bold]Prompt:[/bold] {req.get('prompt', '?')}"]
-
+    lines = [f"[bold]Status:[/bold] [{c}]{st.upper()}[/{c}]"]
+    if req.get("prompt"):
+        lines.append(f"[bold]Prompt:[/bold] {req['prompt'][:500]}{'...' if len(req['prompt']) > 500 else ''}")
     if metrics:
         lines.append("\n[bold]Metrics:[/bold]")
         lines.extend(f"  {k}: {v}" for k, v in metrics.items())
@@ -1129,6 +1413,78 @@ def cmd_swarm_presets() -> None:
 def cmd_swarm_run(preset: str, vars_json: Optional[str] = None) -> None:
     """Run swarm preset (legacy polling mode, use cmd_swarm_run_live for streaming)."""
     cmd_swarm_run_live(preset, vars_json)
+
+
+def cmd_swarm_inspect(preset: str) -> int:
+    """Inspect a swarm preset without starting workers."""
+    from src.swarm.presets import inspect_preset
+
+    try:
+        report = inspect_preset(preset)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return EXIT_USAGE_ERROR
+    except Exception as exc:
+        console.print(f"[red]Failed to inspect preset:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+    status = "OK" if report["valid"] else "INVALID"
+    status_color = "green" if report["valid"] else "red"
+    lines = [
+        f"[bold]Preset:[/bold] {report['name']}",
+        f"[bold]Title:[/bold] {report.get('title') or '-'}",
+        f"[bold]Status:[/bold] [{status_color}]{status}[/{status_color}]",
+        f"[bold]Agents:[/bold] {len(report['agents'])}",
+        f"[bold]Tasks:[/bold] {len(report['tasks'])}",
+        f"[bold]Variables:[/bold] {', '.join(report['variables']) or '-'}",
+    ]
+    if report.get("description"):
+        lines.append(f"[bold]Description:[/bold] {report['description']}")
+    console.print(Panel("\n".join(lines), border_style=status_color, title="Swarm Preset Inspect"))
+
+    agent_table = Table(title="Agents", show_lines=False)
+    agent_table.add_column("ID", style="cyan", no_wrap=True)
+    agent_table.add_column("Role")
+    agent_table.add_column("Tools", max_width=40)
+    for agent in report["agents"]:
+        agent_table.add_row(
+            agent["id"],
+            agent.get("role", ""),
+            ", ".join(agent.get("tools", [])),
+        )
+    console.print(agent_table)
+
+    dag_table = Table(title="DAG Execution Plan", show_lines=False)
+    dag_table.add_column("Layer", justify="right", width=6)
+    dag_table.add_column("Task", style="cyan")
+    dag_table.add_column("Agent")
+    dag_table.add_column("Depends On")
+    task_details = {task["id"]: task for task in report["tasks"]}
+    for idx, layer in enumerate(report["layers"], start=1):
+        for item in layer:
+            task = task_details[item["task_id"]]
+            dag_table.add_row(
+                str(idx),
+                item["task_id"],
+                item["agent_id"],
+                ", ".join(task.get("depends_on", [])) or "-",
+            )
+    console.print(dag_table)
+
+    validation_table = Table(title="Validation", show_lines=False)
+    validation_table.add_column("Level", width=8)
+    validation_table.add_column("Message")
+    if report["errors"]:
+        for error in report["errors"]:
+            validation_table.add_row("[red]ERROR[/red]", error)
+    if report["warnings"]:
+        for warning in report["warnings"]:
+            validation_table.add_row("[yellow]WARN[/yellow]", warning)
+    if not report["errors"] and not report["warnings"]:
+        validation_table.add_row("[green]OK[/green]", "No issues found")
+    console.print(validation_table)
+
+    return EXIT_SUCCESS if report["valid"] else EXIT_RUN_FAILED
 
 
 def cmd_swarm_list() -> None:
@@ -1291,22 +1647,47 @@ def cmd_session_chat(session_id: str, max_iter: int) -> None:
         border_style="cyan",
     ))
 
+    stats = _SessionStats(session_start=time.monotonic())
+    prompt_session = _create_prompt_session(stats)
+
     while True:
+        if prompt_session is None:
+            _print_status_bar(stats)
         try:
-            prompt = Prompt.ask("\n[bold]>[/bold]").strip()
+            prompt = _read_input(prompt_session).strip()
         except (KeyboardInterrupt, EOFError):
             break
         if not prompt or prompt.lower() in ("q", "quit", "exit"):
             break
 
-        start = time.perf_counter()
-        try:
-            result = _run_agent(prompt, history=history[-6:], max_iter=max_iter)
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted[/yellow]")
-            continue
+        run_start = time.perf_counter()
+        _run_state = {"label": "running"}
+        _stop_timer = threading.Event()
 
-        _print_result(result, time.perf_counter() - start)
+        def _session_event_timer(status_ref: Any) -> None:
+            while not _stop_timer.is_set():
+                elapsed = time.perf_counter() - run_start
+                label = _run_state["label"]
+                try:
+                    status_ref.update(f"[bold cyan]\u23f3 {label}... {elapsed:.1f}s[/bold cyan]")
+                except Exception:
+                    pass
+                _stop_timer.wait(1.0)
+
+        with console.status("[bold cyan]\u23f3 Running...[/bold cyan]") as spinner:
+            _timer = threading.Thread(target=_session_event_timer, args=(spinner,), daemon=True)
+            _timer.start()
+            try:
+                result = _run_agent(prompt, history=history[-6:], max_iter=max_iter)
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Interrupted[/yellow]")
+                continue
+            finally:
+                _stop_timer.set()
+                _timer.join(timeout=1)
+
+        stats.last_elapsed = time.perf_counter() - run_start
+        _print_result(result, stats.last_elapsed)
         history.append({"role": "user", "content": prompt})
         if result.get("content"):
             history.append({"role": "assistant", "content": result["content"]})
@@ -1337,6 +1718,28 @@ def cmd_upload(file_path: str) -> None:
     console.print(f"[green]Uploaded:[/green] {dest}")
 
 
+def cmd_provider_login(provider: str) -> int:
+    """Authenticate OAuth-backed LLM providers."""
+    normalized = provider.strip().lower().replace("_", "-")
+    if normalized != "openai-codex":
+        console.print("[red]Unknown OAuth provider.[/red] Supported: openai-codex")
+        return EXIT_USAGE_ERROR
+    try:
+        from src.providers.openai_codex import login_openai_codex
+
+        console.print("[cyan]Starting OpenAI Codex OAuth login...[/cyan]\n")
+        token = login_openai_codex(
+            print_fn=lambda text: console.print(text),
+            prompt_fn=lambda text: Prompt.ask(text),
+        )
+        account = getattr(token, "account_id", None) or "ChatGPT"
+        console.print(f"[green]Authenticated with OpenAI Codex[/green]  [dim]{account}[/dim]")
+        return EXIT_SUCCESS
+    except Exception as exc:
+        console.print(f"[red]Authentication error:[/red] {exc}")
+        return EXIT_RUN_FAILED
+
+
 # ---------------------------------------------------------------------------
 # CLI entrypoint
 # ---------------------------------------------------------------------------
@@ -1359,6 +1762,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
 
     parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
+    parser.add_argument("--swarm-inspect", metavar="PRESET", help="Inspect a swarm preset without running it")
     parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
     parser.add_argument("--swarm-list", action="store_true", help="List swarm runs")
     parser.add_argument("--swarm-show", metavar="RUN_ID", help="Show a swarm run")
@@ -1381,6 +1785,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
     serve_parser.add_argument("--port", type=int, default=8000, help="Listen port")
     serve_parser.add_argument("--dev", action="store_true", help="Start the Vite dev server")
+
+    provider_parser = subparsers.add_parser("provider", help="Manage OAuth providers")
+    provider_subparsers = provider_parser.add_subparsers(dest="provider_command")
+    login_parser = provider_subparsers.add_parser("login", help="Authenticate with an OAuth provider")
+    login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
 
     list_parser = subparsers.add_parser("list", help="List runs")
     list_parser.add_argument("--limit", dest="list_limit", type=int, default=20, help="Maximum number of runs")
@@ -1545,6 +1954,16 @@ _PROVIDER_CHOICES: list[dict[str, str | None]] = [
         "key_prefix": None,
         "key_placeholder": None,
     },
+    {
+        "label": "OpenAI Codex (ChatGPT OAuth)",
+        "provider": "openai-codex",
+        "key_env": None,
+        "base_env": "OPENAI_CODEX_BASE_URL",
+        "base_url": "https://chatgpt.com/backend-api/codex/responses",
+        "model": "openai-codex/gpt-5.3-codex",
+        "key_prefix": None,
+        "key_placeholder": None,
+    },
 ]
 
 
@@ -1566,6 +1985,7 @@ def _render_env_content(config: dict[str, str]) -> str:
         "DEEPSEEK_BASE_URL",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",
+        "OPENAI_CODEX_BASE_URL",
         "GEMINI_API_KEY",
         "GEMINI_BASE_URL",
         "GROQ_API_KEY",
@@ -1648,6 +2068,9 @@ def cmd_init() -> int:
             console.print(
                 f"[red]That key doesn't look right.[/red] Expected it to start with [bold]{key_prefix}[/bold]."
             )
+    elif provider == "openai-codex":
+        console.print("[dim]OpenAI Codex uses ChatGPT OAuth, not an API key.[/dim]")
+        console.print("[dim]After setup, run: vibe-trading provider login openai-codex[/dim]")
     else:
         console.print("[dim]Ollama does not require an API key.[/dim]")
 
@@ -1691,6 +2114,11 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_init()
     if args.command == "serve":
         return serve_main(raw_argv[1:])
+    if args.command == "provider":
+        if args.provider_command == "login":
+            return cmd_provider_login(args.provider)
+        console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider login openai-codex")
+        return EXIT_USAGE_ERROR
     if args.command == "run":
         return _handle_prompt_command(
             args.run_prompt,
@@ -1702,7 +2130,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "list":
         return _coerce_exit_code(cmd_list(args.list_limit))
     if args.command == "show":
-        return _coerce_exit_code(cmd_show(args.run_id))
+        return _coerce_exit_code(cmd_show(args.show))
     if args.command == "chat":
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
 
@@ -1721,6 +2149,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.swarm_presets:
         return _coerce_exit_code(cmd_swarm_presets())
+    if args.swarm_inspect:
+        return _coerce_exit_code(cmd_swarm_inspect(args.swarm_inspect))
     if args.swarm_run:
         preset_name = args.swarm_run[0]
         vars_json = args.swarm_run[1] if len(args.swarm_run) > 1 else None
@@ -1741,7 +2171,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.chat:
         return _coerce_exit_code(cmd_interactive(args.max_iter))
     if args.cont:
-        return cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich)
+        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
 
     # No flags, no subcommand → check if prompt provided, otherwise interactive mode
     if args.prompt or args.prompt_file or not sys.stdin.isatty():

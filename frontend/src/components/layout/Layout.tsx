@@ -1,6 +1,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { BarChart3, Bot, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, PlugZap, ChevronRight } from "lucide-react";
+import {
+  BarChart3,
+  Bot,
+  Moon,
+  Sun,
+  Plus,
+  Trash2,
+  Pencil,
+  MessageSquare,
+  ChevronsLeft,
+  ChevronsRight,
+  PlugZap,
+  ChevronRight,
+  Settings,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { useDarkMode } from "@/hooks/useDarkMode";
@@ -13,6 +27,8 @@ import { SkillsDirectoryPanel } from "@/components/layout/SkillsDirectoryPanel";
 const NAV = [
   { to: "/", icon: BarChart3, key: "home" as const },
   { to: "/agent", icon: Bot, key: "agent" as const },
+  { to: "/settings", icon: Settings, key: "settings" as const },
+  { to: "/correlation", icon: BarChart3, key: "correlation" as const },
 ];
 
 /** Title starts with "WeChat" (case-insensitive) or contains 微信 → 全微信 group. */

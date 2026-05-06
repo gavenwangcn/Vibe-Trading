@@ -521,7 +521,7 @@ def _build_variables(preset_name: str, prompt: str) -> dict[str, str]:
     goal = prompt.strip()
     g = _snippet(goal, 2000)
 
-    # Preset-specific variable sets (see agent/config/swarm/*.yaml).
+    # Preset-specific variable sets (see agent/src/swarm/presets/*.yaml).
     builders: dict[str, dict[str, str]] = {
         "global_allocation_committee": {"goal": g, "risk_tolerance": risk},
         "equity_research_team": {"market": market, "goal": g},
@@ -567,7 +567,7 @@ class SwarmTool(BaseTool):
     name = "run_swarm"
     description = (
         "Run a multi-agent swarm team for complex analysis tasks. "
-        "Provide a natural language prompt; the tool picks a preset from agent/config/swarm "
+        "Provide a natural language prompt; the tool picks a preset from agent/src/swarm/presets "
         "(e.g. equity_research_team, quant_strategy_desk, global_allocation_committee, risk_committee) "
         "and fills template variables. "
         "Example: run_swarm(prompt='Analyze A-share new energy opportunities for Q2 2026')"
@@ -583,6 +583,16 @@ class SwarmTool(BaseTool):
         "required": ["prompt"],
     }
     is_readonly = False
+    repeatable = True  # loop.py dedups by tool name; each prompt is a distinct run (#42)
+
+    def __init__(self, *, include_shell_tools: bool = False) -> None:
+        """Initialize the swarm launcher.
+
+        Args:
+            include_shell_tools: Whether worker registries may include shell
+                execution tools requested by presets.
+        """
+        self.include_shell_tools = include_shell_tools
 
     def execute(self, **kwargs: Any) -> str:
         """Start a swarm run: auto-match preset, extract variables, wait for completion.
@@ -620,7 +630,11 @@ class SwarmTool(BaseTool):
         runtime = SwarmRuntime(store=store, max_workers=int(os.getenv("SWARM_MAX_WORKERS", "4")))
 
         try:
-            run = runtime.start_run(preset, variables)
+            run = runtime.start_run(
+                preset,
+                variables,
+                include_shell_tools=self.include_shell_tools,
+            )
         except FileNotFoundError as exc:
             return json.dumps(
                 {"status": "error", "error": f"Preset not found: {exc}"},

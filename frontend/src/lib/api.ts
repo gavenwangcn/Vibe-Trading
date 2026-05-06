@@ -1,3 +1,5 @@
+import { authHeaders, withAuthQuery } from "@/lib/apiAuth";
+
 const BASE = "";
 
 /** OpenAI Chat Completions user message content parts (vision). */
@@ -5,18 +7,49 @@ export type OpenAIUserContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export const AUTH_REQUIRED_MESSAGE =
+  "Remote API access requires an API key. Add it in Settings, or run the backend on localhost for local-only use.";
+
+export function isAuthRequiredError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
+async function errorFromResponse(res: Response): Promise<ApiError> {
+  let detail = `HTTP ${res.status}`;
+  try {
+    const body = await res.json();
+    detail = body.detail || body.message || detail;
+  } catch { /* ignore */ }
+  if (res.status === 401 || res.status === 403) {
+    detail = AUTH_REQUIRED_MESSAGE;
+  }
+  return new ApiError(detail, res.status);
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const { headers, ...rest } = options ?? {};
+  const mergedHeaders: Record<string, string> = { "Content-Type": "application/json", ...authHeaders() };
+  if (headers) {
+    new Headers(headers).forEach((value, key) => {
+      mergedHeaders[key] = value;
+    });
+  }
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
+    ...rest,
+    headers: mergedHeaders,
   });
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body.detail || body.message || detail;
-    } catch { /* ignore */ }
-    throw new Error(detail);
+    throw await errorFromResponse(res);
   }
   const text = await res.text();
   return text ? JSON.parse(text) : ({} as T);
@@ -31,14 +64,9 @@ export interface UploadResult {
 async function uploadFile(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
+  const res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form });
   if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body.detail || body.message || detail;
-    } catch { /* ignore */ }
-    throw new Error(detail);
+    throw await errorFromResponse(res);
   }
   return res.json();
 }
@@ -61,7 +89,7 @@ export const api = {
     }),
   cancelSession: (sid: string) => request<{ status: string }>(`/sessions/${sid}/cancel`, { method: "POST" }),
   getSessionMessages: (sid: string) => request<MessageItem[]>(`/sessions/${sid}/messages`),
-  sseUrl: (sid: string) => `${BASE}/sessions/${sid}/events`,
+  sseUrl: (sid: string) => withAuthQuery(`${BASE}/sessions/${sid}/events`),
 
   // Swarm API
   listSwarmPresets: () => request<SwarmPreset[]>("/swarm/presets"),
@@ -75,6 +103,7 @@ export const api = {
     }),
   listSwarmRuns: () => request<SwarmRunSummary[]>("/swarm/runs"),
   getSwarmRun: (id: string) => request<Record<string, unknown>>(`/swarm/runs/${id}`),
+  swarmSseUrl: (id: string) => withAuthQuery(`${BASE}/swarm/runs/${id}/events`),
   cancelSwarmRun: (id: string) =>
     request<{ status: string }>(`/swarm/runs/${id}/cancel`, { method: "POST" }),
 
@@ -108,6 +137,19 @@ export const api = {
     request<McpImportResult>("/system/mcp/import", {
       method: "POST",
       body: JSON.stringify({ raw }),
+    }),
+
+  getLLMSettings: () => request<LLMSettings>("/settings/llm"),
+  updateLLMSettings: (settings: UpdateLLMSettingsRequest) =>
+    request<LLMSettings>("/settings/llm", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+  getDataSourceSettings: () => request<DataSourceSettings>("/settings/data-sources"),
+  updateDataSourceSettings: (settings: UpdateDataSourceSettingsRequest) =>
+    request<DataSourceSettings>("/settings/data-sources", {
+      method: "PUT",
+      body: JSON.stringify(settings),
     }),
 };
 
@@ -220,6 +262,60 @@ export interface SkillDocResponse {
   name_zh: string;
   intro_zh: string;
   content: string;
+}
+
+export interface LLMProviderOption {
+  name: string;
+  label: string;
+  api_key_env?: string | null;
+  base_url_env: string;
+  default_model: string;
+  default_base_url: string;
+  api_key_required: boolean;
+  auth_type?: string;
+  login_command?: string | null;
+}
+
+export interface LLMSettings {
+  provider: string;
+  model_name: string;
+  base_url: string;
+  api_key_env?: string | null;
+  api_key_configured: boolean;
+  api_key_hint?: string | null;
+  api_key_required: boolean;
+  temperature: number;
+  timeout_seconds: number;
+  max_retries: number;
+  reasoning_effort: string;
+  env_path: string;
+  providers: LLMProviderOption[];
+}
+
+export interface UpdateLLMSettingsRequest {
+  provider: string;
+  model_name: string;
+  base_url: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  temperature: number;
+  timeout_seconds: number;
+  max_retries: number;
+  reasoning_effort?: string;
+}
+
+export interface DataSourceSettings {
+  tushare_token_configured: boolean;
+  tushare_token_hint?: string | null;
+  baostock_supported: boolean;
+  baostock_installed: boolean;
+  baostock_message: string;
+  env_path: string;
+}
+
+export interface UpdateDataSourceSettingsRequest {
+  tushare_token?: string;
+  clear_tushare_token?: boolean;
 }
 
 // --- Types matching backend API contracts ---

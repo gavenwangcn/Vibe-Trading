@@ -2,11 +2,13 @@ services:
   vibe-trading:
     build: .
     ports:
-      - "8899:8899"
+      - "127.0.0.1:8899:8899"
     # 仅使用 agent/.env（仓库根目录不设 .env）
     env_file:
       - path: agent/.env
         required: false
+    environment:
+      - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions

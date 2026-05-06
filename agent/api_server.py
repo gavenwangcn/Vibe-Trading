@@ -7,6 +7,8 @@ V5: ReAct Agent + async /run + CORS env + SSE tool events.
 from __future__ import annotations
 
 import asyncio
+import hmac
+import ipaddress
 import json
 import os
 import re
@@ -43,8 +45,12 @@ for _s in ("stdout", "stderr"):
 RUNS_DIR = Path(__file__).resolve().parent / "runs"
 SESSIONS_DIR = Path(__file__).resolve().parent / "sessions"
 UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
+AGENT_DIR = Path(__file__).resolve().parent
+ENV_PATH = AGENT_DIR / ".env"
+ENV_EXAMPLE_PATH = AGENT_DIR / ".env.example"
 
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+_UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 # Rich console for colored logs
 console = Console()
@@ -143,6 +149,70 @@ class HealthResponse(BaseModel):
     timestamp: str = Field(..., description="Server timestamp")
 
 
+class LLMProviderOption(BaseModel):
+    """Supported LLM provider metadata for the settings UI."""
+
+    name: str
+    label: str
+    api_key_env: Optional[str] = None
+    base_url_env: str
+    default_model: str
+    default_base_url: str
+    api_key_required: bool = True
+    auth_type: str = "api_key"
+    login_command: Optional[str] = None
+
+
+class LLMSettingsResponse(BaseModel):
+    """Current LLM runtime settings."""
+
+    provider: str
+    model_name: str
+    base_url: str
+    api_key_env: Optional[str] = None
+    api_key_configured: bool
+    api_key_hint: Optional[str] = None
+    api_key_required: bool
+    temperature: float
+    timeout_seconds: int
+    max_retries: int
+    reasoning_effort: str
+    env_path: str
+    providers: List[LLMProviderOption]
+
+
+class UpdateLLMSettingsRequest(BaseModel):
+    """Update LLM settings persisted to agent/.env."""
+
+    provider: str = Field(..., min_length=1)
+    model_name: str = Field(..., min_length=1)
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    temperature: float = 0.0
+    timeout_seconds: int = Field(120, ge=1, le=3600)
+    max_retries: int = Field(2, ge=0, le=20)
+    reasoning_effort: Optional[str] = None
+
+
+class DataSourceSettingsResponse(BaseModel):
+    """Current data source credential settings."""
+
+    tushare_token_configured: bool
+    tushare_token_hint: Optional[str] = None
+    baostock_supported: bool
+    baostock_installed: bool
+    baostock_message: str
+    env_path: str
+
+
+class UpdateDataSourceSettingsRequest(BaseModel):
+    """Update project-local data source credentials."""
+
+    tushare_token: Optional[str] = None
+    clear_tushare_token: bool = False
+
+
 # ---- V4 Session Models ----
 
 class CreateSessionRequest(BaseModel):
@@ -207,12 +277,43 @@ app = FastAPI(
 
 app.include_router(mcp_settings_router, prefix="/system/mcp", tags=["mcp"])
 
-# CORS: override with CORS_ORIGINS (comma-separated)
-_CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,http://localhost:8000,"
-    "http://127.0.0.1:3000,http://127.0.0.1:5173,http://127.0.0.1:8000",
-).split(",")
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:8000",
+]
+
+
+def _parse_cors_origins(raw: Optional[str]) -> List[str]:
+    """Parse CORS origins and reject credentialed wildcard configuration.
+
+    Args:
+        raw: Comma-separated CORS origins from ``CORS_ORIGINS``. ``None`` or a
+            blank value uses the loopback development defaults.
+
+    Returns:
+        Explicit CORS origins accepted by the API server.
+
+    Raises:
+        RuntimeError: If a wildcard origin is configured while credentials are
+            enabled.
+    """
+    if raw is None or not raw.strip():
+        return list(_DEFAULT_CORS_ORIGINS)
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        raise RuntimeError(
+            "CORS_ORIGINS='*' is not allowed while credentials are enabled; "
+            "configure explicit Web UI origins instead."
+        )
+    return origins
+
+
+# CORS: override with CORS_ORIGINS (comma-separated explicit origins)
+_CORS_ORIGINS = _parse_cors_origins(os.getenv("CORS_ORIGINS"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -237,26 +338,169 @@ async def _run_startup_preflight() -> None:
 
 _security = HTTPBearer(auto_error=False)
 _API_KEY = os.getenv("API_AUTH_KEY")
+_SHELL_TOOLS_ENV = "VIBE_TRADING_ENABLE_SHELL_TOOLS"
+_DOCKER_LOOPBACK_ENV = "VIBE_TRADING_TRUST_DOCKER_LOOPBACK"
+
+
+def _configured_api_key() -> str:
+    """Return the current API auth key, if configured."""
+    return os.getenv("API_AUTH_KEY") or _API_KEY or ""
 
 
 async def require_auth(
-    cred: HTTPAuthorizationCredentials = Security(_security),
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
 ) -> None:
-    """Validate Bearer token against API_AUTH_KEY environment variable.
-
-    If API_AUTH_KEY is not set, authentication is skipped (dev mode).
-    Only write endpoints (POST/PUT/DELETE/PATCH) use this dependency.
+    """Validate Bearer token for sensitive API endpoints.
 
     Args:
+        request: Incoming HTTP request.
         cred: HTTP Bearer credentials extracted from the Authorization header.
 
     Raises:
+        HTTPException: 403 when dev-mode auth is reached from a non-local client.
         HTTPException: 401 when API_AUTH_KEY is set but the token is missing or wrong.
     """
-    if not _API_KEY:
-        return
-    if not cred or cred.credentials != _API_KEY:
+    _validate_api_auth(request=request, cred=cred)
+
+
+async def require_event_stream_auth(
+    request: Request,
+    api_key: Optional[str] = Query(None),
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+) -> None:
+    """Validate auth for browser EventSource streams.
+
+    Native EventSource cannot send custom Authorization headers, so event
+    stream endpoints may accept the API key from the query string. Normal JSON
+    endpoints must continue to use Bearer auth only.
+
+    Args:
+        request: Incoming HTTP request.
+        api_key: Optional query-string API key for EventSource clients.
+        cred: HTTP Bearer credentials extracted from the Authorization header.
+    """
+    _validate_api_auth(request=request, cred=cred, query_api_key=api_key, allow_query=True)
+
+
+def _auth_credential_from_header_or_query(
+    cred: Optional[HTTPAuthorizationCredentials],
+    query_api_key: Optional[str],
+    *,
+    allow_query: bool,
+) -> str:
+    """Return the supplied API credential from the permitted source."""
+    if cred and cred.credentials:
+        return cred.credentials
+    if allow_query and query_api_key:
+        return query_api_key
+    return ""
+
+
+def _validate_api_auth(
+    *,
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials],
+    query_api_key: Optional[str] = None,
+    allow_query: bool = False,
+) -> None:
+    """Validate configured auth, preserving loopback-only dev mode."""
+    api_key = _configured_api_key()
+    if not api_key:
+        if _is_local_client(request):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API_AUTH_KEY is required for non-local API access",
+        )
+
+    token = _auth_credential_from_header_or_query(cred, query_api_key, allow_query=allow_query)
+    if not token or not hmac.compare_digest(token, api_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+def _is_local_client(request: Request) -> bool:
+    """Return whether the request originates from a loopback client."""
+    host = request.client.host if request.client else ""
+    if host in {"localhost", "testclient"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if ip.is_loopback:
+        return True
+    return _trusted_docker_loopback_ip(ip)
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """Return whether a boolean environment flag is enabled."""
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_gateway_ips() -> set[ipaddress.IPv4Address]:
+    """Return IPv4 default gateway addresses from Linux procfs."""
+    gateways: set[ipaddress.IPv4Address] = set()
+    try:
+        lines = Path("/proc/net/route").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return gateways
+
+    for line in lines[1:]:
+        fields = line.split()
+        if len(fields) < 3 or fields[1] != "00000000":
+            continue
+        try:
+            raw = int(fields[2], 16).to_bytes(4, byteorder="little")
+            gateways.add(ipaddress.IPv4Address(raw))
+        except ValueError:
+            continue
+    return gateways
+
+
+def _trusted_docker_loopback_ip(ip: ipaddress._BaseAddress) -> bool:
+    """Return whether an IP is the trusted Docker host gateway.
+
+    Docker Desktop presents host requests to a container as the bridge gateway
+    instead of 127.0.0.1. This escape hatch is safe only when the published
+    port is bound to host loopback, so the official compose file enables it
+    together with a 127.0.0.1 port binding.
+    """
+    if not isinstance(ip, ipaddress.IPv4Address):
+        return False
+    if not _env_flag_enabled(_DOCKER_LOOPBACK_ENV):
+        return False
+    return ip in _default_gateway_ips()
+
+
+def _env_shell_tools_enabled() -> bool:
+    """Return whether server-side shell tools are explicitly enabled."""
+    return _env_flag_enabled(_SHELL_TOOLS_ENV)
+
+
+def _shell_tools_enabled_for_request(request: Request) -> bool:
+    """Return whether this API request may expose shell tools to the agent."""
+    return _is_local_client(request) or _env_shell_tools_enabled()
+
+
+async def require_local_or_auth(
+    request: Request,
+    cred: Optional[HTTPAuthorizationCredentials] = Security(_security),
+) -> None:
+    """Protect settings access when dev-mode auth is disabled.
+
+    If API_AUTH_KEY is configured, require the bearer token. If not, allow only
+    loopback clients so an API server bound to 0.0.0.0 cannot accept remote
+    credential reads or writes in dev mode.
+    """
+    if _configured_api_key():
+        await require_auth(request, cred)
+        return
+    if not _is_local_client(request):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Settings access requires API_AUTH_KEY or a local loopback client",
+        )
 
 
 # ============================================================================
@@ -266,6 +510,245 @@ async def require_auth(
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+LLM_PROVIDER_CONFIG_PATH = AGENT_DIR / "src" / "providers" / "llm_providers.json"
+
+
+def _load_llm_providers() -> List[LLMProviderOption]:
+    """Load provider metadata from JSON so additions stay data-driven."""
+    try:
+        raw = json.loads(LLM_PROVIDER_CONFIG_PATH.read_text(encoding="utf-8"))
+        providers = [LLMProviderOption(**item) for item in raw]
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load LLM provider config: {LLM_PROVIDER_CONFIG_PATH}") from exc
+
+    seen: set[str] = set()
+    for provider in providers:
+        if provider.name in seen:
+            raise RuntimeError(f"Duplicate LLM provider name: {provider.name}")
+        seen.add(provider.name)
+    if not providers:
+        raise RuntimeError("LLM provider config must not be empty")
+    return providers
+
+
+LLM_PROVIDERS = _load_llm_providers()
+LLM_PROVIDER_BY_NAME = {provider.name: provider for provider in LLM_PROVIDERS}
+LLM_REASONING_EFFORTS = {"", "low", "medium", "high", "max"}
+LLM_API_KEY_PLACEHOLDERS = {"", "sk-or-v1-your-key-here", "sk-xxx", "xxx", "gsk_xxx"}
+TUSHARE_TOKEN_PLACEHOLDERS = {"", "your-tushare-token"}
+
+
+def _ensure_agent_env_file() -> Path:
+    """Ensure the project-local agent/.env exists."""
+    if not ENV_PATH.exists():
+        ENV_PATH.write_text("# Created by Vibe-Trading Web UI settings.\n", encoding="utf-8")
+    return ENV_PATH
+
+
+def _strip_env_value(value: str) -> str:
+    """Remove basic dotenv quotes and inline comments."""
+    value = value.strip()
+    if " #" in value:
+        value = value.split(" #", 1)[0].rstrip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value.strip()
+
+
+def _read_env_values(path: Path) -> Dict[str, str]:
+    """Read active KEY=value entries from a dotenv file."""
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            values[key] = _strip_env_value(value)
+    return values
+
+
+def _read_settings_env_values() -> Dict[str, str]:
+    """Read settings without creating agent/.env.
+
+    Prefer the user's active agent/.env. If it does not exist yet, fall back to
+    agent/.env.example for display defaults only.
+    """
+    if ENV_PATH.exists():
+        return _read_env_values(ENV_PATH)
+    if ENV_EXAMPLE_PATH.exists():
+        return _read_env_values(ENV_EXAMPLE_PATH)
+    return {}
+
+
+def _project_relative_path(path: Path) -> str:
+    """Return a project-relative display path without leaking an absolute path."""
+    try:
+        return path.resolve().relative_to(AGENT_DIR.parent.resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
+def _format_env_value(value: str) -> str:
+    """Format a dotenv value without allowing multiline injection."""
+    if "\n" in value or "\r" in value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Environment values cannot contain newlines")
+    value = value.strip()
+    if not value:
+        return ""
+    if any(ch.isspace() for ch in value) or "#" in value:
+        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return value
+
+
+def _write_env_values(path: Path, updates: Dict[str, str]) -> None:
+    """Upsert active dotenv values while preserving comments and ordering."""
+    _ensure_agent_env_file()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    seen: set[str] = set()
+    for index, raw in enumerate(lines):
+        stripped = raw.lstrip()
+        is_comment = stripped.startswith("#")
+        candidate = stripped[1:].lstrip() if is_comment else stripped
+        if "=" not in candidate:
+            continue
+        key = candidate.split("=", 1)[0].strip()
+        if key in updates and key not in seen:
+            lines[index] = f"{key}={_format_env_value(updates[key])}"
+            seen.add(key)
+    missing = [key for key in updates if key not in seen]
+    if missing:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append("# Updated from Web UI")
+        for key in missing:
+            lines.append(f"{key}={_format_env_value(updates[key])}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _is_configured_secret(value: str, placeholders: set[str]) -> bool:
+    """Return True when a secret is set and not a documented placeholder."""
+    normalized = value.strip().strip('"').strip("'")
+    if not normalized:
+        return False
+    return normalized.lower() not in {placeholder.lower() for placeholder in placeholders}
+
+
+def _coerce_float(value: str, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_int(value: str, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLMSettingsResponse:
+    """Build the public settings payload from dotenv values."""
+    env_values = values if values is not None else _read_settings_env_values()
+    provider_name = env_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
+    provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
+    api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
+    api_key_configured = _is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
+    api_key_hint = None
+    if provider.auth_type == "oauth":
+        try:
+            from src.providers.openai_codex import get_openai_codex_login_status
+
+            token = get_openai_codex_login_status()
+        except Exception:
+            token = None
+        api_key_configured = bool(token)
+        api_key_hint = None
+    return LLMSettingsResponse(
+        provider=provider.name,
+        model_name=env_values.get("LANGCHAIN_MODEL_NAME", provider.default_model),
+        base_url=env_values.get(provider.base_url_env, provider.default_base_url),
+        api_key_env=provider.api_key_env,
+        api_key_configured=api_key_configured,
+        api_key_hint=api_key_hint,
+        api_key_required=provider.api_key_required,
+        temperature=_coerce_float(env_values.get("LANGCHAIN_TEMPERATURE", "0.0"), 0.0),
+        timeout_seconds=_coerce_int(env_values.get("TIMEOUT_SECONDS", "120"), 120),
+        max_retries=_coerce_int(env_values.get("MAX_RETRIES", "2"), 2),
+        reasoning_effort=env_values.get("LANGCHAIN_REASONING_EFFORT", "").strip().lower(),
+        env_path=_project_relative_path(ENV_PATH),
+        providers=LLM_PROVIDERS,
+    )
+
+
+def _baostock_supported() -> bool:
+    """Check whether the project has a BaoStock loader implementation."""
+    loader_dir = AGENT_DIR / "backtest" / "loaders"
+    return any((loader_dir / name).exists() for name in ("baostock.py", "baostock_loader.py"))
+
+
+def _baostock_installed() -> bool:
+    """Check whether the optional BaoStock package is importable."""
+    import importlib.util
+
+    return importlib.util.find_spec("baostock") is not None
+
+
+def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None) -> DataSourceSettingsResponse:
+    """Build the public data source settings payload."""
+    env_values = values if values is not None else _read_settings_env_values()
+    token = env_values.get("TUSHARE_TOKEN", "")
+    token_configured = _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
+    supported = _baostock_supported()
+    installed = _baostock_installed()
+    if supported:
+        baostock_message = "BaoStock loader is available."
+    elif installed:
+        baostock_message = "BaoStock package is installed, but this project has no BaoStock loader."
+    else:
+        baostock_message = "No BaoStock loader is registered in this project."
+    return DataSourceSettingsResponse(
+        tushare_token_configured=token_configured,
+        tushare_token_hint=None,
+        baostock_supported=supported,
+        baostock_installed=installed,
+        baostock_message=baostock_message,
+        env_path=_project_relative_path(ENV_PATH),
+    )
+
+
+def _sync_runtime_env(provider: LLMProviderOption, updates: Dict[str, str]) -> None:
+    """Apply saved LLM settings to the running API process."""
+    for key, value in updates.items():
+        if value:
+            os.environ[key] = value
+        else:
+            os.environ.pop(key, None)
+
+    if provider.api_key_env:
+        key_value = os.environ.get(provider.api_key_env, "")
+        if _is_configured_secret(key_value, LLM_API_KEY_PLACEHOLDERS):
+            os.environ["OPENAI_API_KEY"] = key_value
+        else:
+            os.environ.pop("OPENAI_API_KEY", None)
+    elif provider.auth_type == "oauth":
+        os.environ.pop("OPENAI_API_KEY", None)
+    else:
+        os.environ["OPENAI_API_KEY"] = "ollama"
+
+    base_url = os.environ.get(provider.base_url_env, "")
+    if base_url:
+        os.environ["OPENAI_API_BASE"] = base_url
+        os.environ["OPENAI_BASE_URL"] = base_url
+    else:
+        os.environ.pop("OPENAI_API_BASE", None)
+        os.environ.pop("OPENAI_BASE_URL", None)
+
 
 def _load_json_file(path: Path) -> Optional[Dict[str, Any]]:
     """Load JSON from disk if present."""
@@ -426,7 +909,7 @@ def _build_response_from_run_dir(run_dir: Path, elapsed: float, *, include_analy
 # API Endpoints
 # ============================================================================
 
-@app.get("/runs/{run_id}/code")
+@app.get("/runs/{run_id}/code", dependencies=[Depends(require_auth)])
 async def get_run_code(run_id: str):
     """Return strategy source files for a run.
 
@@ -447,7 +930,7 @@ async def get_run_code(run_id: str):
     return result
 
 
-@app.get("/runs/{run_id}/artifacts/{filename}")
+@app.get("/runs/{run_id}/artifacts/{filename}", dependencies=[Depends(require_auth)])
 async def get_run_artifact_file(run_id: str, filename: str):
     """Serve a binary/text file from ``runs/{run_id}/artifacts/`` (e.g. PNG charts).
 
@@ -468,7 +951,7 @@ async def get_run_artifact_file(run_id: str, filename: str):
     return FileResponse(file_path, media_type=media, filename=safe)
 
 
-@app.get("/runs/{run_id}/pine")
+@app.get("/runs/{run_id}/pine", dependencies=[Depends(require_auth)])
 async def get_run_pine(run_id: str):
     """Return Pine Script file for a run.
 
@@ -487,7 +970,7 @@ async def get_run_pine(run_id: str):
     }
 
 
-@app.get("/runs/{run_id}", response_model=RunResponse)
+@app.get("/runs/{run_id}", response_model=RunResponse, dependencies=[Depends(require_auth)])
 async def get_run_result(run_id: str):
     """Fetch full details for a historical run by ``run_id``."""
     run_dir = RUNS_DIR / run_id
@@ -503,7 +986,7 @@ async def get_run_result(run_id: str):
     return response
 
 
-@app.get("/runs", response_model=List[RunInfo])
+@app.get("/runs", response_model=List[RunInfo], dependencies=[Depends(require_auth)])
 async def list_runs(limit: int = 20):
     """List recent runs with summary fields."""
     limit = min(max(1, limit), 100)
@@ -557,13 +1040,15 @@ async def list_runs(limit: int = 20):
             try:
                 req_data = json.loads(req_file.read_text(encoding="utf-8"))
                 prompt = req_data.get("prompt")
-            except: pass
+            except:
+                pass
         
         if not prompt and planner_file.exists():
             try:
                 planner_data = json.loads(planner_file.read_text(encoding="utf-8"))
                 prompt = planner_data.get("user_goal") or planner_data.get("goal")
-            except: pass
+            except:
+                pass
             
         if not prompt:
             prompt_file = d / "user_prompt.txt"
@@ -601,6 +1086,112 @@ async def list_runs(limit: int = 20):
     return results
 
 
+@app.get(
+    "/settings/llm",
+    response_model=LLMSettingsResponse,
+    dependencies=[Depends(require_local_or_auth)],
+)
+async def get_llm_settings():
+    """Return project-local LLM settings for the Web UI."""
+    return _build_llm_settings_response()
+
+
+@app.put("/settings/llm", response_model=LLMSettingsResponse, dependencies=[Depends(require_local_or_auth)])
+async def update_llm_settings(payload: UpdateLLMSettingsRequest):
+    """Persist project-local LLM settings and update the running process."""
+    provider_name = payload.provider.strip().lower()
+    provider = LLM_PROVIDER_BY_NAME.get(provider_name)
+    if provider is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported LLM provider")
+
+    model_name = payload.model_name.strip()
+    if not model_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Model name is required")
+
+    if payload.temperature < 0 or payload.temperature > 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Temperature must be between 0 and 2")
+
+    reasoning_effort = (payload.reasoning_effort or "").strip().lower()
+    if reasoning_effort not in LLM_REASONING_EFFORTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reasoning effort must be low, medium, high, or max")
+
+    current_values = _read_settings_env_values()
+    base_url = (payload.base_url if payload.base_url is not None else provider.default_base_url).strip()
+    if provider.auth_type == "oauth":
+        try:
+            from src.providers.openai_codex import validate_codex_base_url
+
+            base_url = validate_codex_base_url(base_url)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    updates: Dict[str, str] = {
+        "LANGCHAIN_PROVIDER": provider.name,
+        "LANGCHAIN_MODEL_NAME": model_name,
+        provider.base_url_env: base_url,
+        "LANGCHAIN_TEMPERATURE": str(payload.temperature),
+        "TIMEOUT_SECONDS": str(payload.timeout_seconds),
+        "MAX_RETRIES": str(payload.max_retries),
+    }
+    if reasoning_effort or "LANGCHAIN_REASONING_EFFORT" in current_values:
+        updates["LANGCHAIN_REASONING_EFFORT"] = reasoning_effort
+
+    if provider.api_key_env:
+        if payload.clear_api_key:
+            updates[provider.api_key_env] = ""
+        elif payload.api_key is not None and payload.api_key.strip():
+            api_key = payload.api_key.strip()
+            updates[provider.api_key_env] = api_key if _is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS) else ""
+        elif provider.api_key_env in current_values and _is_configured_secret(
+            current_values[provider.api_key_env],
+            LLM_API_KEY_PLACEHOLDERS,
+        ):
+            updates[provider.api_key_env] = current_values[provider.api_key_env]
+    elif payload.clear_api_key:
+        os.environ.pop("OPENAI_API_KEY", None)
+
+    _write_env_values(ENV_PATH, updates)
+    _sync_runtime_env(provider, updates)
+    return _build_llm_settings_response(_read_env_values(ENV_PATH))
+
+
+@app.get(
+    "/settings/data-sources",
+    response_model=DataSourceSettingsResponse,
+    dependencies=[Depends(require_local_or_auth)],
+)
+async def get_data_source_settings():
+    """Return project-local data source credentials for the Web UI."""
+    return _build_data_source_settings_response()
+
+
+@app.put(
+    "/settings/data-sources",
+    response_model=DataSourceSettingsResponse,
+    dependencies=[Depends(require_local_or_auth)],
+)
+async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
+    """Persist project-local data source credentials and update the running process."""
+    current_values = _read_settings_env_values()
+    updates: Dict[str, str] = {}
+
+    if payload.clear_tushare_token:
+        updates["TUSHARE_TOKEN"] = ""
+    elif payload.tushare_token is not None and payload.tushare_token.strip():
+        updates["TUSHARE_TOKEN"] = payload.tushare_token.strip()
+    elif "TUSHARE_TOKEN" in current_values:
+        updates["TUSHARE_TOKEN"] = current_values["TUSHARE_TOKEN"]
+
+    if updates:
+        _write_env_values(ENV_PATH, updates)
+        token = updates.get("TUSHARE_TOKEN", "").strip()
+        if _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS):
+            os.environ["TUSHARE_TOKEN"] = token
+        else:
+            os.environ.pop("TUSHARE_TOKEN", None)
+
+    return _build_data_source_settings_response(_read_env_values(ENV_PATH))
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Liveness probe."""
@@ -609,6 +1200,36 @@ async def health_check():
         service="Vibe-Trading API",
         timestamp=now_shanghai_iso()
     )
+
+
+@app.get("/correlation")
+async def get_correlation_matrix(
+    codes: str = Query(..., description="Comma-separated asset codes, e.g. BTC-USDT,ETH-USDT,SPY"),
+    days: int = Query(90, description="Lookback window in days", ge=7, le=365),
+    method: str = Query("pearson", description="Correlation method: pearson or spearman"),
+):
+    """Compute cross-asset correlation matrix from daily returns.
+
+    Fetches price data for each code via available data loaders,
+    computes pairwise correlation of daily returns over the lookback window.
+    """
+    from backtest.correlation import compute_correlation_matrix
+
+    code_list = [c.strip() for c in codes.split(",") if c.strip()]
+    if len(code_list) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 asset codes required")
+    if len(code_list) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 assets per request")
+    if method not in ("pearson", "spearman"):
+        raise HTTPException(status_code=400, detail="method must be 'pearson' or 'spearman'")
+
+    try:
+        result = compute_correlation_matrix(codes=code_list, days=days, method=method)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Correlation computation failed: {exc}")
 
 
 def _terminate_current_process() -> None:
@@ -766,7 +1387,7 @@ async def create_session(request: CreateSessionRequest):
     )
 
 
-@app.get("/sessions", response_model=List[SessionResponse])
+@app.get("/sessions", response_model=List[SessionResponse], dependencies=[Depends(require_auth)])
 async def list_sessions(limit: int = Query(50, ge=1, le=200)):
     """List sessions."""
     svc = _get_session_service()
@@ -786,7 +1407,7 @@ async def list_sessions(limit: int = Query(50, ge=1, le=200)):
     ]
 
 
-@app.get("/sessions/{session_id}", response_model=SessionResponse)
+@app.get("/sessions/{session_id}", response_model=SessionResponse, dependencies=[Depends(require_auth)])
 async def get_session(session_id: str):
     """Get one session by id."""
     svc = _get_session_service()
@@ -839,13 +1460,17 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
 
 
 @app.post("/sessions/{session_id}/messages", dependencies=[Depends(require_auth)])
-async def send_message(session_id: str, request: SendMessageRequest):
+async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
     """Send a user message and start the agent loop (natural language strategy)."""
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
     try:
-        result = await svc.send_message(session_id=session_id, content=request.content)
+        result = await svc.send_message(
+            session_id=session_id,
+            content=payload.content,
+            include_shell_tools=_shell_tools_enabled_for_request(http_request),
+        )
         return result
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -863,7 +1488,7 @@ async def cancel_session(session_id: str):
     return {"status": "cancelled"}
 
 
-@app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse])
+@app.get("/sessions/{session_id}/messages", response_model=List[MessageResponse], dependencies=[Depends(require_auth)])
 async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
     """List messages for a session."""
     svc = _get_session_service()
@@ -884,7 +1509,7 @@ async def get_messages(session_id: str, limit: int = Query(100, ge=1, le=1000)):
     ]
 
 
-@app.get("/sessions/{session_id}/events")
+@app.get("/sessions/{session_id}/events", dependencies=[Depends(require_event_stream_auth)])
 async def session_events(
     session_id: str,
     request: Request,
@@ -926,15 +1551,23 @@ _BLOCKED_UPLOAD_EXT = {
     # binaries / executables we should never accept
     ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".app", ".dmg",
     ".so", ".dll", ".dylib",
+    # executable-adjacent source, shell, config, and template files
+    ".py", ".pyw", ".sh", ".bash", ".zsh", ".fish", ".ps1",
+    ".yaml", ".yml", ".j2", ".jinja", ".jinja2", ".template",
     # archives — don't auto-extract; user can unpack locally
     ".zip", ".rar", ".7z", ".tar", ".gz", ".tgz", ".bz2", ".xz",
+}
+
+_BLOCKED_UPLOAD_NAMES = {
+    "dockerfile",
+    "containerfile",
 }
 
 
 _SHADOW_ID_RE = __import__("re").compile(r"^shadow_[0-9a-f]{8}$")
 
 
-@app.get("/shadow-reports/{shadow_id}")
+@app.get("/shadow-reports/{shadow_id}", dependencies=[Depends(require_auth)])
 async def get_shadow_report(shadow_id: str, format: str = "html"):
     """Serve a rendered Shadow Account report (HTML by default, PDF if available).
 
@@ -964,30 +1597,49 @@ async def upload_file(file: UploadFile):
     """Upload any document or data file (max 50MB).
 
     Accepts most common formats: PDF, Word, Excel, PowerPoint, images,
-    CSV/TSV, plain text, JSON/YAML/TOML, source code. Executables and
-    archives are rejected — unpack locally before uploading.
+    CSV/TSV, plain text, JSON, and TOML. Executables, executable-adjacent
+    source/config/template files, and archives are rejected.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename")
+    filename = Path(file.filename).name
     ext = Path(file.filename).suffix.lower()
-    if ext in _BLOCKED_UPLOAD_EXT:
+    if ext in _BLOCKED_UPLOAD_EXT or filename.lower() in _BLOCKED_UPLOAD_NAMES:
         raise HTTPException(
             status_code=400,
-            detail=f"File type {ext} is not allowed (executables/archives blocked).",
-        )
-
-    content = await file.read()
-    if len(content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large (limit {MAX_UPLOAD_SIZE // (1024 * 1024)} MB)",
+            detail="This file type is not allowed for upload.",
         )
 
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
     safe_name = f"{uuid.uuid4().hex}{ext}"
     dest = UPLOADS_DIR / safe_name
-    dest.write_bytes(content)
+    total_size = 0
+
+    try:
+        with dest.open("wb") as handle:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE:
+                    handle.close()
+                    if dest.exists():
+                        dest.unlink()
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large (limit {MAX_UPLOAD_SIZE // (1024 * 1024)} MB)",
+                    )
+                handle.write(chunk)
+    except HTTPException:
+        raise
+    except OSError as exc:
+        if dest.exists():
+            dest.unlink()
+        raise HTTPException(status_code=500, detail=f"Failed to store upload: {exc}") from exc
+    finally:
+        await file.close()
 
     return {
         "status": "ok",
@@ -1103,13 +1755,17 @@ async def get_swarm_zh_doc(stem: str):
 
 
 @app.post("/swarm/runs", dependencies=[Depends(require_auth)])
-async def create_swarm_run(request: dict):
+async def create_swarm_run(payload: dict, http_request: Request):
     """Start a swarm run: body must include preset_name and user_vars."""
     runtime = _get_swarm_runtime()
-    preset_name = request.get("preset_name", "")
-    user_vars = request.get("user_vars", {})
+    preset_name = payload.get("preset_name", "")
+    user_vars = payload.get("user_vars", {})
     try:
-        run = runtime.start_run(preset_name, user_vars)
+        run = runtime.start_run(
+            preset_name,
+            user_vars,
+            include_shell_tools=_shell_tools_enabled_for_request(http_request),
+        )
         return {"id": run.id, "status": run.status.value, "preset_name": run.preset_name}
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1117,7 +1773,7 @@ async def create_swarm_run(request: dict):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/swarm/runs")
+@app.get("/swarm/runs", dependencies=[Depends(require_auth)])
 async def list_swarm_runs(limit: int = Query(20, ge=1, le=100)):
     """List swarm runs (newest first)."""
     runtime = _get_swarm_runtime()
@@ -1135,7 +1791,7 @@ async def list_swarm_runs(limit: int = Query(20, ge=1, le=100)):
     ]
 
 
-@app.get("/swarm/runs/{run_id}")
+@app.get("/swarm/runs/{run_id}", dependencies=[Depends(require_auth)])
 async def get_swarm_run(run_id: str):
     """Swarm run detail including task statuses."""
     from src.swarm.task_store import TaskStore
@@ -1167,7 +1823,7 @@ async def get_swarm_run(run_id: str):
     }
 
 
-@app.get("/swarm/runs/{run_id}/events")
+@app.get("/swarm/runs/{run_id}/events", dependencies=[Depends(require_event_stream_auth)])
 async def swarm_run_events(run_id: str, request: Request, last_index: int = Query(0, ge=0)):
     """SSE stream for a swarm run."""
     import asyncio
@@ -1211,6 +1867,18 @@ def serve_main(argv: list[str] | None = None) -> int:
     import subprocess
     import uvicorn
     from fastapi.staticfiles import StaticFiles
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    class SPAStaticFiles(StaticFiles):
+        """Serve index.html for browser refreshes on client-side routes."""
+
+        async def get_response(self, path: str, scope: Dict[str, Any]):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code != status.HTTP_404_NOT_FOUND:
+                    raise
+                return await super().get_response("index.html", scope)
 
     parser = argparse.ArgumentParser(description="Vibe-Trading Server")
     parser.add_argument("--port", type=int, default=8000, help="Listen port (default 8000)")
@@ -1238,7 +1906,7 @@ def serve_main(argv: list[str] | None = None) -> int:
         print(f"[dev] API: http://localhost:{args.port}")
     elif frontend_dist.exists():
         if not any(route.path == "/" for route in app.routes):
-            app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+            app.mount("/", SPAStaticFiles(directory=str(frontend_dist), html=True), name="frontend")
         print(f"[prod] Frontend served from {frontend_dist}")
     else:
         print(f"[warn] No frontend build found at {frontend_dist}")
@@ -1260,4 +1928,3 @@ def serve_main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(serve_main())
-

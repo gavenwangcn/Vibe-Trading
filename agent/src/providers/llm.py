@@ -22,12 +22,14 @@ if ChatOpenAI is not None:
     class ChatOpenAIWithReasoning(ChatOpenAI):  # type: ignore[misc,valid-type]
         """ChatOpenAI that preserves provider reasoning across invoke + stream.
 
-        langchain-openai 0.3.x drops non-standard fields in both paths:
-          * _convert_dict_to_message — invoke / ainvoke
-          * _convert_delta_to_message_chunk — stream / astream
+        langchain-openai 0.3.x drops non-standard fields in three paths:
+          * _convert_dict_to_message — invoke / ainvoke (inbound)
+          * _convert_delta_to_message_chunk — stream / astream (inbound)
+          * _convert_message_to_dict — request serialization (outbound)
         Moonshot/DeepSeek emit `reasoning_content`; OpenRouter relays as
-        `reasoning`. Both normalize to additional_kwargs["reasoning_content"],
-        so downstream reads one canonical key.
+        `reasoning`. Inbound paths normalize to additional_kwargs["reasoning_content"];
+        outbound path re-injects it so strict providers (kimi-k2.5) accept
+        multi-turn continuations.
         """
 
         @staticmethod
@@ -57,6 +59,30 @@ if ChatOpenAI is not None:
             if choices:
                 self._capture(choices[0]["delta"], gen.message)
             return gen
+
+        def _get_request_payload(  # type: ignore[override]
+            self,
+            input_: Any,
+            *,
+            stop: Optional[list[str]] = None,
+            **kwargs: Any,
+        ) -> dict:
+            """Re-inject reasoning_content and normalize assistant content.
+
+            LangChain strips ``reasoning_content`` when serializing AIMessages
+            back to OpenAI wire format. Moonshot kimi-k2.5 also rejects
+            assistant turns where ``content`` is null or ``reasoning_content``
+            is absent, breaking ReAct continuations after a tool call (#39).
+            """
+            payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+            messages = super()._convert_input(input_).to_messages()
+            for i, m in enumerate(payload["messages"]):
+                if m.get("role") != "assistant":
+                    continue
+                if m.get("content") is None:
+                    m["content"] = ""
+                m["reasoning_content"] = messages[i].additional_kwargs.get("reasoning_content", "")
+            return payload
 else:
     ChatOpenAIWithReasoning = None  # type: ignore
 
@@ -112,6 +138,13 @@ def _sync_provider_env(provider: Optional[str] = None) -> None:
     _ensure_dotenv()
     p = provider if provider is not None else os.getenv("LANGCHAIN_PROVIDER", "openai")
     provider = p.lower().strip()
+
+    if provider in {"openai-codex", "openai_codex"}:
+        codex_url = os.getenv("OPENAI_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex/responses")
+        os.environ["OPENAI_API_BASE"] = codex_url
+        os.environ["OPENAI_BASE_URL"] = codex_url
+        os.environ.pop("OPENAI_API_KEY", None)
+        return
 
     # (api_key_env, base_url_env)
     _PROVIDER_MAP: dict[str, tuple[str | None, str]] = {
@@ -173,8 +206,6 @@ def build_llm(
     Raises:
         RuntimeError: If langchain-openai is missing or model name is unset.
     """
-    if ChatOpenAI is None:
-        raise RuntimeError("langchain-openai is not installed")
     _sync_provider_env(provider=provider)
     name = model_name or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
     if not name:
@@ -183,9 +214,23 @@ def build_llm(
     to_env = timeout_env or "TIMEOUT_SECONDS"
     temperature = float(os.getenv(t_env, os.getenv("LANGCHAIN_TEMPERATURE", "0.0")))
     timeout = int(os.getenv(to_env, os.getenv("TIMEOUT_SECONDS", "120")))
+    eff_provider = (provider or os.getenv("LANGCHAIN_PROVIDER", "openai")).lower()
+
+    if eff_provider in {"openai-codex", "openai_codex"}:
+        from src.providers.openai_codex import OpenAICodexLLM
+
+        effort = os.getenv("LANGCHAIN_REASONING_EFFORT", "").strip().lower()
+        return OpenAICodexLLM(
+            model=name,
+            temperature=temperature,
+            timeout=timeout,
+            reasoning_effort=effort or None,
+        )
+
+    if ChatOpenAI is None:
+        raise RuntimeError("langchain-openai is not installed")
     # MiniMax requires temperature in (0.0, 1.0] — clamp to 0.01 when the
     # default 0.0 is used to avoid an API validation error.
-    eff_provider = (provider or os.getenv("LANGCHAIN_PROVIDER", "openai")).lower()
     if eff_provider == "minimax" and temperature <= 0.0:
         temperature = 0.01
     # Optional reasoning activation for relays requiring opt-in (e.g. OpenRouter).
