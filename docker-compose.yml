@@ -1,63 +1,63 @@
-services:
-  vibe-trading:
-    build: .
-    ports:
-      - "127.0.0.1:8899:8899"
-    # 仅使用 agent/.env（仓库根目录不设 .env）
-    env_file:
-      - path: agent/.env
-        required: false
-    environment:
-      - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
-    volumes:
-      - vibe-runs:/app/agent/runs
-      - vibe-sessions:/app/agent/sessions
-      # MCP 等配置持久化；须挂载目录而非单文件，否则容器内 os.replace(.tmp→json) 在 bind 单文件上易 EBUSY
-      - ./agent/config:/app/agent/config
-    restart: unless-stopped
-
-  # SDK 已置于本仓库 wechatbot/nodejs/；构建上下文为 Vibe-Trading 根目录。
-  wechat-bridge:
-    build:
-      context: .
-      dockerfile: wechat-bridge/Dockerfile
-    # 仅使用 wechat-bridge/.env（与 agent/.env 分离，勿混用）
-    env_file:
-      - path: wechat-bridge/.env
-        required: false
-    # 覆盖桥接 .env 中可能指向宿主机的 API 地址，保证同网络内访问 vibe-trading
-    environment:
-      VIBE_TRADING_BASE_URL: http://vibe-trading:8899
-      WECHAT_BRIDGE_STATE_FILE: /data/state.json
-      WECHATBOT_STORAGE_DIR: /data/wechatbot
-      WECHAT_INSTANCE_NAME: ${WECHAT_INSTANCE_NAME:-default}
-    volumes:
-      # 宿主机：{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → 容器 /data（微信凭证、会话映射等）
-      # 插值变量来自「执行 compose 时的环境」或项目根 .env；若不上根 .env，请用默认值或启动前 export。
-      - ${WECHAT_DATA_ROOT:-./wechat-instances}/${WECHAT_INSTANCE_NAME:-default}:/data
-    depends_on:
-      vibe-trading:
-        condition: service_healthy
-    restart: unless-stopped
-    tty: true
-    stdin_open: true
-
-  frontend:
-    image: node:20
-    working_dir: /app
-    ports:
-      - "5899:5899"
-    volumes:
-      - ./frontend:/app
-    environment:
-      - VITE_API_URL=http://vibe-trading:8899
-    command: sh -c "npm install && npm run dev -- --host --port 5899"
-    profiles:
-      - frontend
-    depends_on:
-      vibe-trading:
-        condition: service_started
-
-volumes:
-  vibe-runs:
-  vibe-sessions:
+services:
+  vibe-trading:
+    build: .
+    # 端口发布：默认对外 8899；仅本机访问时在项目根 .env 设 VIBE_PUBLISH=127.0.0.1:8899
+    ports:
+      - "${VIBE_PUBLISH:-8899}:8899"
+    # 仅使用 agent/.env（LLM、API_AUTH_KEY 等）
+    env_file:
+      - path: agent/.env
+        required: false
+    volumes:
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      # MCP 等配置持久化；须挂载目录而非单文件，否则容器内 os.replace(.tmp→json) 在 bind 单文件上易 EBUSY
+      - ./agent/config:/app/agent/config
+    restart: unless-stopped
+
+  # SDK 已置于本仓库 wechatbot/nodejs/；构建上下文为 Vibe-Trading 根目录。
+  # 不需要微信桥时：docker compose up vibe-trading --build -d
+  wechat-bridge:
+    build:
+      context: .
+      dockerfile: wechat-bridge/Dockerfile
+    # 仅使用 wechat-bridge/.env（与 agent/.env 分离，勿混用）
+    env_file:
+      - path: wechat-bridge/.env
+        required: false
+    # 覆盖桥接 .env 中可能指向宿主机的 API 地址，保证同网络内访问 vibe-trading
+    environment:
+      VIBE_TRADING_BASE_URL: http://vibe-trading:8899
+      WECHAT_BRIDGE_STATE_FILE: /data/state.json
+      WECHATBOT_STORAGE_DIR: /data/wechatbot
+      WECHAT_INSTANCE_NAME: ${WECHAT_INSTANCE_NAME:-default}
+    volumes:
+      # 宿主机：{WECHAT_DATA_ROOT}/{WECHAT_INSTANCE_NAME} → 容器 /data（微信凭证、会话映射等）
+      # 插值变量来自「执行 compose 时的环境」或项目根 .env
+      - ${WECHAT_DATA_ROOT:-./wechat-instances}/${WECHAT_INSTANCE_NAME:-default}:/data
+    depends_on:
+      vibe-trading:
+        condition: service_healthy
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+
+  frontend:
+    image: node:20
+    working_dir: /app
+    ports:
+      - "${VIBE_FRONTEND_PUBLISH:-5899}:5899"
+    volumes:
+      - ./frontend:/app
+    environment:
+      - VITE_API_URL=http://vibe-trading:8899
+    command: sh -c "npm install && npm run dev -- --host --port 5899"
+    profiles:
+      - frontend
+    depends_on:
+      vibe-trading:
+        condition: service_started
+
+volumes:
+  vibe-runs:
+  vibe-sessions:
