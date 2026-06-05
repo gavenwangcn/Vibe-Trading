@@ -23,7 +23,6 @@ from typing import Callable
 from src.config.schema import AgentConfig
 from src.shanghai_time import now_shanghai_iso
 from src.swarm import grounding
-from src.swarm.mailbox import Mailbox
 from src.swarm.models import (
     RunStatus,
     SwarmAgentSpec,
