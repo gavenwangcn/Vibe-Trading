@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from functools import partial
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -14,6 +18,23 @@ from src.shanghai_time import now_shanghai_iso
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# MCP connect/list_tools runs in a worker thread so the uvicorn event loop stays responsive.
+_MCP_API_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="mcp_api",
+)
+
+
+async def _list_tools_in_thread(
+    server_id: str,
+    cfg: Dict[str, Any],
+) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        _MCP_API_EXECUTOR,
+        partial(runtime.list_tools_sync, cfg, server_id),
+    )
 
 
 class McpServerPublic(BaseModel):
@@ -73,8 +94,11 @@ def _to_public(sid: str, cfg: Dict[str, Any]) -> McpServerPublic:
 
 @router.get("/servers", response_model=List[McpServerPublic])
 async def list_mcp_servers() -> List[McpServerPublic]:
+    t0 = time.perf_counter()
     servers = store.get_servers()
-    return [_to_public(sid, c) for sid, c in sorted(servers.items()) if isinstance(c, dict)]
+    out = [_to_public(sid, c) for sid, c in sorted(servers.items()) if isinstance(c, dict)]
+    logger.debug("MCP list servers count=%d elapsed=%.3fs", len(out), time.perf_counter() - t0)
+    return out
 
 
 @router.put("/servers/{server_id}", response_model=McpServerPublic)
@@ -142,7 +166,8 @@ async def get_server_tools(
     tools: List[Dict[str, Any]] = []
     err: Optional[str] = None
     if refresh:
-        ok, live_tools, err = runtime.list_tools_sync(cfg)
+        logger.info("MCP API refresh tools server_id=%s", server_id)
+        ok, live_tools, err = await _list_tools_in_thread(server_id, cfg)
         source = "live"
         cfg = dict(cfg)
         if ok:
@@ -187,7 +212,8 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     cfg = servers.get(server_id)
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=404, detail="Server not found")
-    ok, tools, err = runtime.list_tools_sync(cfg)
+    logger.info("MCP API test server_id=%s", server_id)
+    ok, tools, err = await _list_tools_in_thread(server_id, cfg)
     cfg = dict(cfg)
     if ok:
         cfg["_cached_tools"] = tools
@@ -196,6 +222,13 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     else:
         cfg["_last_error"] = err
     store.set_server(server_id, cfg)
+    logger.info(
+        "MCP API test done server_id=%s ok=%s tool_count=%d error=%s",
+        server_id,
+        ok,
+        len(tools) if ok else 0,
+        err,
+    )
     return {
         "ok": ok,
         "server_id": server_id,

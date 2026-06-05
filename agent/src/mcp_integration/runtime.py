@@ -7,6 +7,7 @@ import atexit
 import concurrent.futures
 import logging
 import os
+import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from mcp import ClientSession, StdioServerParameters
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 LIST_TIMEOUT = float(os.getenv("MCP_LIST_TIMEOUT", "90"))
 # Single MCP tools/call_tool wait (stdio or SSE)
 CALL_TIMEOUT = float(os.getenv("MCP_CALL_TIMEOUT", "360"))
+# Extra seconds for thread-bridge overhead (spawn stdio / SSE handshake)
+BRIDGE_TIMEOUT = float(os.getenv("MCP_BRIDGE_TIMEOUT", str(LIST_TIMEOUT + 30)))
+_MCP_VERBOSE = os.getenv("VIBE_MCP_VERBOSE", "").strip().lower() in ("1", "true", "yes")
 
 
 def _params_from_cfg(cfg: Dict[str, Any]) -> StdioServerParameters:
@@ -31,6 +35,40 @@ def _params_from_cfg(cfg: Dict[str, Any]) -> StdioServerParameters:
         env = {}
     env_s = {str(k): str(v) for k, v in env.items()}
     return StdioServerParameters(command=cmd, args=args, env=env_s if env_s else None)
+
+
+def _cfg_label(cfg: Dict[str, Any], server_id: str = "") -> str:
+    """Short, non-secret description for logs."""
+    sid = (server_id or "").strip() or "?"
+    transport = _effective_transport(cfg)
+    if transport == "sse":
+        return f"{sid} transport=sse url={cfg.get('url') or ''}"
+    cmd = str(cfg.get("command") or "").strip()
+    args = cfg.get("args") or []
+    if isinstance(args, list):
+        arg_s = " ".join(str(a) for a in args[:6])
+    else:
+        arg_s = ""
+    return f"{sid} transport=stdio command={cmd} {arg_s}".strip()
+
+
+def _log_failure(context: str, label: str, exc: BaseException, elapsed: float) -> None:
+    """Log MCP errors, expanding ExceptionGroup / TaskGroup sub-exceptions."""
+    logger.warning(
+        "MCP %s failed [%s] elapsed=%.2fs: %s",
+        context,
+        label,
+        elapsed,
+        exc,
+    )
+    subs = getattr(exc, "exceptions", None)
+    if subs:
+        for i, sub in enumerate(subs):
+            logger.warning("MCP %s sub-error[%d] [%s]: %s", context, i, label, sub)
+            if _MCP_VERBOSE:
+                logger.debug("MCP %s sub-error[%d] traceback", context, i, exc_info=sub)
+    elif _MCP_VERBOSE:
+        logger.debug("MCP %s traceback [%s]", context, label, exc_info=exc)
 
 
 def _effective_transport(cfg: Dict[str, Any]) -> str:
@@ -84,8 +122,16 @@ def _serialize_call_result(result: CallToolResult) -> Dict[str, Any]:
     return payload
 
 
-async def _with_mcp_session(cfg: Dict[str, Any], fn: Callable[[ClientSession], Any]) -> Any:
+async def _with_mcp_session(
+    cfg: Dict[str, Any],
+    fn: Callable[[ClientSession], Any],
+    *,
+    server_id: str = "",
+) -> Any:
     transport = _effective_transport(cfg)
+    label = _cfg_label(cfg, server_id)
+    if _MCP_VERBOSE:
+        logger.info("MCP session open [%s]", label)
     if transport == "sse":
         from mcp.client.sse import sse_client
 
@@ -110,12 +156,12 @@ async def _with_mcp_session(cfg: Dict[str, Any], fn: Callable[[ClientSession], A
             return await fn(session)
 
 
-async def list_tools_async(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def list_tools_async(cfg: Dict[str, Any], *, server_id: str = "") -> List[Dict[str, Any]]:
     async def _inner(session: ClientSession) -> List[Dict[str, Any]]:
         res = await asyncio.wait_for(session.list_tools(), timeout=LIST_TIMEOUT)
         return _serialize_tool_list(res)
 
-    return await _with_mcp_session(cfg, _inner)
+    return await _with_mcp_session(cfg, _inner, server_id=server_id)
 
 
 async def call_tool_async(cfg: Dict[str, Any], tool_name: str, arguments: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -160,22 +206,42 @@ def run_coro(coro):
     except RuntimeError:
         return asyncio.run(coro)
     fut = _mcp_bridge_executor().submit(asyncio.run, coro)
-    return fut.result()
+    return fut.result(timeout=BRIDGE_TIMEOUT)
 
 
-def list_tools_sync(cfg: Dict[str, Any]) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
+def list_tools_sync(
+    cfg: Dict[str, Any],
+    server_id: str = "",
+) -> Tuple[bool, List[Dict[str, Any]], Optional[str]]:
+    label = _cfg_label(cfg, server_id)
+    t0 = time.perf_counter()
+    logger.info("MCP list_tools start [%s] timeout=%.0fs", label, LIST_TIMEOUT)
     try:
-        tools = run_coro(list_tools_async(cfg))
+        tools = run_coro(list_tools_async(cfg, server_id=server_id))
+        elapsed = time.perf_counter() - t0
+        logger.info("MCP list_tools ok [%s] tools=%d elapsed=%.2fs", label, len(tools), elapsed)
         return True, tools, None
     except Exception as exc:
-        logger.warning("MCP list_tools failed: %s", exc)
+        elapsed = time.perf_counter() - t0
+        _log_failure("list_tools", label, exc, elapsed)
         return False, [], str(exc)
 
 
-def call_tool_sync(cfg: Dict[str, Any], tool_name: str, arguments: Optional[Dict[str, Any]]) -> Tuple[bool, Dict[str, Any], Optional[str]]:
+def call_tool_sync(
+    cfg: Dict[str, Any],
+    tool_name: str,
+    arguments: Optional[Dict[str, Any]],
+    server_id: str = "",
+) -> Tuple[bool, Dict[str, Any], Optional[str]]:
+    label = f"{_cfg_label(cfg, server_id)} tool={tool_name}"
+    t0 = time.perf_counter()
+    logger.info("MCP call_tool start [%s] timeout=%.0fs", label, CALL_TIMEOUT)
     try:
         data = run_coro(call_tool_async(cfg, tool_name, arguments))
+        elapsed = time.perf_counter() - t0
+        logger.info("MCP call_tool ok [%s] elapsed=%.2fs", label, elapsed)
         return True, data, None
     except Exception as exc:
-        logger.warning("MCP call_tool failed: %s", exc)
+        elapsed = time.perf_counter() - t0
+        _log_failure("call_tool", label, exc, elapsed)
         return False, {}, str(exc)

@@ -85,7 +85,7 @@ class McpDelegatedTool(BaseTool):
             return json.dumps({"status": "error", "error": f"Unknown MCP server '{self._server_id}'"}, ensure_ascii=False)
         if not cfg.get("enabled", True):
             return json.dumps({"status": "error", "error": f"MCP server '{self._server_id}' is disabled"}, ensure_ascii=False)
-        ok, data, err = runtime.call_tool_sync(cfg, self._mcp_tool_name, args)
+        ok, data, err = runtime.call_tool_sync(cfg, self._mcp_tool_name, args, self._server_id)
         if not ok:
             return json.dumps({"status": "error", "error": err or "call failed"}, ensure_ascii=False)
         return json.dumps(
@@ -102,7 +102,7 @@ def _load_tools_for_server(server_id: str, cfg: Dict[str, Any]) -> Tuple[bool, L
     cached = cfg.get("_cached_tools")
     if isinstance(cached, list) and len(cached) > 0:
         return True, cached, None
-    ok, tools, err = runtime.list_tools_sync(cfg)
+    ok, tools, err = runtime.list_tools_sync(cfg, server_id)
     if ok:
         return True, tools, None
     return False, [], err
