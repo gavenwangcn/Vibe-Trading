@@ -25,9 +25,10 @@ WORKDIR /app
 # Pip: avoid ReadTimeoutError on slow links to PyPI (e.g. large wheels from files.pythonhosted.org)
 ENV PIP_DEFAULT_TIMEOUT=300
 
-# System deps
+# System deps (+ gosu for dropping root in entrypoint)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps (install before copying code for layer caching)
@@ -44,12 +45,14 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 # Install CLI entrypoint
 RUN pip install --no-cache-dir --timeout=300 --retries=10 -e .
 
-# Runtime should not run as root. Keep writable app data directories owned by
-# the service user so named Docker volumes inherit usable permissions.
+# Runtime should not run as root. Entrypoint fixes volume mount ownership, then
+# drops privileges to vibe before starting the API server.
 RUN useradd --create-home --shell /usr/sbin/nologin vibe \
-    && mkdir -p agent/runs agent/sessions agent/uploads agent/.swarm/runs \
+    && mkdir -p agent/runs agent/sessions agent/config agent/uploads agent/.swarm/runs \
     && chown -R vibe:vibe /app
-USER vibe
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Default port
 EXPOSE 8899
@@ -58,5 +61,6 @@ EXPOSE 8899
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')" || exit 1
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # Run API server (serves frontend/dist as static files)
 CMD ["vibe-trading", "serve", "--host", "0.0.0.0", "--port", "8899"]

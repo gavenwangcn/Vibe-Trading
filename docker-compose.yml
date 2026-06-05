@@ -11,7 +11,7 @@ services:
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
-      # MCP 配置用命名卷：容器以非 root 用户 vibe 运行，bind 宿主机 ./agent/config 常因权限导致 500
+      # MCP 配置持久化（命名卷；启动时 entrypoint 会 chown 给 vibe 用户）
       - vibe-mcp-config:/app/agent/config
     restart: unless-stopped
 
