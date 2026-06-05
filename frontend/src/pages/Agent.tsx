@@ -1,13 +1,10 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, ImagePlus, User } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
-import { useI18n } from "@/lib/i18n";
-import { ApiError, api, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus, type OpenAIUserContentPart } from "@/lib/api";
-import { fileToImageDataUrl } from "@/lib/imageCompress";
-import { formatDateShanghaiForFilename, formatDateTimeShanghai } from "@/lib/shanghaiTime";
+import { ApiError, api, type GoalSnapshot, type MandateProposal, type MandateCommitted, type LiveAction, type LiveHalted, type LiveStatus } from "@/lib/api";
 import { isReportWorthyRun } from "@/lib/runReports";
 import type { AgentMessage, ToolCallEntry } from "@/types/agent";
 import { AgentAvatar } from "@/components/chat/AgentAvatar";
@@ -41,15 +38,6 @@ function groupMessages(msgs: AgentMessage[]): MsgGroup[] {
 }
 
 const act = () => useAgentStore.getState();
-
-const MAX_CHAT_IMAGES = 5;
-const IMAGE_FILE_NAME_RE = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|svg)$/i;
-
-function isImageFile(file: File): boolean {
-  const t = (file.type ?? "").toLowerCase();
-  if (t.startsWith("image/")) return true;
-  return IMAGE_FILE_NAME_RE.test(file.name);
-}
 
 /** Poll cadence for the shared `GET /live/status` snapshot. */
 const LIVE_STATUS_POLL_INTERVAL_MS = 15_000;
@@ -226,23 +214,15 @@ export function Agent() {
   const lastEventRef = useRef(0);
   const sseTimeoutMsRef = useRef(90_000);
 
-  /* tool_progress coalescing 
- —
- keep latest payload per-tool, flush once per rAF. */
+  /* tool_progress coalescing 鈥?keep latest payload per-tool, flush once per rAF. */
   const pendingProgressRef = useRef<Map<string, NonNullable<ToolCallEntry["progress"]>>>(new Map());
   const progressRafRef = useRef(0);
 
-  const [attachment, setAttachment] = useState<{
-    filename: string;
-    filePath: string;
-    previewDataUrl?: string;
-  } | null>(null);
-  const [pendingImages, setPendingImages] = useState<Array<{ id: string; dataUrl: string }>>([]);
+  const [attachment, setAttachment] = useState<{ filename: string; filePath: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showUploadMenu, setShowUploadMenu] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const [goalComposerActive, setGoalComposerActive] = useState(false);
   const [goalDetailsOpen, setGoalDetailsOpen] = useState(false);
@@ -261,9 +241,7 @@ export function Agent() {
   /* Shared `GET /live/status` snapshot. Owned here (single poller) and passed down
    * to RunnerStatus, so the global kill switch can be shown whenever connector runtime
    * could be active out-of-band (CLI/another session), not only off in-session SSE
-   * items (audit M2: always-available global halt 
- —
- SPEC Consent 搂4). */
+   * items (audit M2: always-available global halt 鈥?SPEC Consent 搂4). */
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   /* The status endpoint is not wired on every backend; a 404/501 hides the panel
    * and removes status from the kill-switch visibility condition. */
@@ -277,13 +255,10 @@ export function Agent() {
   const sessionLoading = useAgentStore(s => s.sessionLoading);
 
   const { connect, disconnect, onStatusChange } = useSSE();
-  const { t } = useI18n();
 
   const urlSessionId = searchParams.get("session");
 
-  /* Smart scroll 
- —
- only auto-scroll when near bottom */
+  /* Smart scroll 鈥?only auto-scroll when near bottom */
   const isNearBottom = useCallback(() => {
     const el = listRef.current;
     if (!el) return true;
@@ -323,7 +298,7 @@ export function Agent() {
   useEffect(() => {
     onStatusChange((s) => {
       act().setSseStatus(s);
-      if (s === "reconnecting" && prevSseStatusRef.current === "connected") toast.warning("Connection lost, reconnecting…");
+      if (s === "reconnecting" && prevSseStatusRef.current === "connected") toast.warning("Connection lost, reconnecting...");
       else if (s === "connected" && prevSseStatusRef.current === "reconnecting") toast.success("Connection restored");
       prevSseStatusRef.current = s;
     });
@@ -429,9 +404,7 @@ export function Agent() {
 
     connect(api.sseUrl(sid, { replay: "active" }), {
       text_delta: (d) => { touch(); act().appendDelta(String(d.delta || "")); scrollToBottom(); },
-      thinking_done: () => { touch(); /* don't flush 
- —
- keep streaming text visible */ },
+      thinking_done: () => { touch(); /* don't flush 鈥?keep streaming text visible */ },
 
       tool_call: (d) => {
         touch();
@@ -499,9 +472,7 @@ export function Agent() {
 
       "attempt.created": () => {
         touch();
-        // Backend has created a new attempt 
- —
- ensure streaming state is active
+        // Backend has created a new attempt 鈥?ensure streaming state is active
         // even if we connected mid-stream (SSE replay / page reload).
         if (act().status !== "streaming") act().setStatus("streaming");
       },
@@ -641,9 +612,7 @@ export function Agent() {
         // the RunnerStatus panel re-polls so its per-broker rows show "halted".
         setLiveHalted(halted);
         setLiveStatusRefresh((n) => n + 1);
-        toast.warning("Connector runtime halted 
- —
- runner stopped, resting orders cancelled");
+        toast.warning("Connector runtime halted 鈥?runner stopped, resting orders cancelled");
       },
 
       "live.resumed": (d) => {
@@ -775,17 +744,10 @@ export function Agent() {
     return () => clearInterval(timer);
   }, [status]);
 
-  const runPrompt = async (promptOrOverride?: string, retryImageUrls?: string[]) => {
-    if (status === "streaming") return;
+  const runPrompt = async (prompt: string) => {
+    if (!prompt.trim() || status === "streaming") return;
 
-    const prompt = (promptOrOverride ?? input).trim();
-    if (!promptOrOverride && (/^\/new$/i.test(prompt) || /^\/新会话$/i.test(prompt))) {
-      toast.info(t.webNoNewCommand);
-      return;
-    }
-
-    if (goalComposerActive && !retryImageUrls) {
-      if (!prompt) return;
+    if (goalComposerActive) {
       setInput("");
       inputRef.current?.focus();
       try {
@@ -810,76 +772,36 @@ export function Agent() {
 
     let finalPrompt = prompt;
 
+    // Swarm mode: let agent auto-select the right preset
     if (swarmPreset) {
       setSwarmPreset(null);
-      finalPrompt = `[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n${finalPrompt}`;
+      finalPrompt = `[Swarm Team Mode] Use the swarm tool to assemble the best specialist team for this task. Auto-select the most appropriate preset.\n\n${prompt}`;
     }
 
-    const extraImageUrls: string[] = [];
     if (attachment) {
-      if (attachment.previewDataUrl) {
-        extraImageUrls.push(attachment.previewDataUrl);
-      } else {
-        finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
-      }
+      finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
       setAttachment(null);
     }
-
-    const imageUrls = [
-      ...extraImageUrls,
-      ...(retryImageUrls ?? pendingImages.map((p) => p.dataUrl)),
-    ];
-    if (!finalPrompt.trim() && imageUrls.length === 0) return;
-
-    const visionDefaultText =
-      finalPrompt.trim() ||
-      (imageUrls.length > 1 ? "请依次理解以下图片并回答。" : "请理解图片内容并回答。");
-
     setInput("");
-    setPendingImages([]);
-    act().addMessage({
-      id: "",
-      type: "user",
-      content: finalPrompt.trim() || visionDefaultText,
-      ...(imageUrls.length ? { imageUrls } : {}),
-      timestamp: Date.now(),
-    });
+    act().addMessage({ id: "", type: "user", content: finalPrompt, timestamp: Date.now() });
     act().setStatus("streaming");
     forceScrollToBottom();
     inputRef.current?.focus();
 
-    let payload: string | OpenAIUserContentPart[];
-    if (imageUrls.length > 0) {
-      const parts: OpenAIUserContentPart[] = [{ type: "text", text: visionDefaultText }];
-      for (const url of imageUrls) {
-        parts.push({ type: "image_url", image_url: { url } });
-      }
-      payload = parts;
-    } else {
-      payload = finalPrompt;
-    }
-
     try {
       let sid = act().sessionId;
-      const titleHint = finalPrompt.slice(0, 50) || "图片对话";
       if (!sid) {
-        const session = await api.createSession(titleHint);
+        const session = await api.createSession(prompt.slice(0, 50));
         sid = session.session_id;
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      await api.sendMessage(sid, payload);
-    } catch (err) {
+      await api.sendMessage(sid, finalPrompt);
+    } catch {
       act().setStatus("error");
-      const detail = err instanceof Error ? err.message : String(err);
-      toast.error(`${t.sendFailed}${detail ? `: ${detail}` : ""}`);
-      act().addMessage({
-        id: "",
-        type: "error",
-        content: `${t.sendFailed}${detail ? `: ${detail}` : ""}`,
-        timestamp: Date.now(),
-      });
+      toast.error("Failed to send message, please retry.");
+      act().addMessage({ id: "", type: "error", content: "Failed to send message, please retry.", timestamp: Date.now() });
     }
   };
 
@@ -997,24 +919,23 @@ export function Agent() {
     const msgs = act().messages;
     const errorIdx = msgs.findIndex(m => m.id === errorMsg.id);
     if (errorIdx === -1) return;
-    let userText = "";
-    let retryImages: string[] | undefined;
+    // Find the most recent user message before this error
+    let userContent: string | null = null;
     for (let i = errorIdx - 1; i >= 0; i--) {
       if (msgs[i].type === "user") {
-        userText = msgs[i].content;
-        retryImages = msgs[i].imageUrls;
+        userContent = msgs[i].content;
         break;
       }
     }
-    if (!userText.trim() && !retryImages?.length) return;
-    runPrompt(userText, retryImages);
+    if (!userContent) return;
+    runPrompt(userContent);
   }, [status]);
 
   const handleExport = () => {
     if (messages.length === 0) return;
-    const lines: string[] = [`# Chat Export`, ``, `Export time: ${formatDateTimeShanghai(Date.now())} (Asia/Shanghai)`, ``];
+    const lines: string[] = [`# Chat Export`, ``, `Export time: ${new Date().toLocaleString()}`, ``];
     for (const msg of messages) {
-      const time = formatDateTimeShanghai(msg.timestamp);
+      const time = new Date(msg.timestamp).toLocaleString();
       if (msg.type === "user") {
         lines.push(`## User (${time})`, ``, msg.content, ``);
       } else if (msg.type === "answer") {
@@ -1031,7 +952,7 @@ export function Agent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `chat_${formatDateShanghaiForFilename()}.md`;
+    a.download = `chat_${new Date().toISOString().slice(0, 10)}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1056,21 +977,9 @@ export function Agent() {
     }
     setUploading(true);
     setShowUploadMenu(false);
-    let previewDataUrl: string | undefined;
-    if (isImageFile(file)) {
-      try {
-        previewDataUrl = await fileToImageDataUrl(file);
-      } catch {
-        /* preview optional */
-      }
-    }
     try {
       const result = await api.uploadFile(file);
-      setAttachment({
-        filename: result.filename,
-        filePath: result.file_path,
-        ...(previewDataUrl ? { previewDataUrl } : {}),
-      });
+      setAttachment({ filename: result.filename, filePath: result.file_path });
       toast.success(`Uploaded: ${result.filename}`);
     } catch (err) {
       toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`);
@@ -1078,50 +987,6 @@ export function Agent() {
       setUploading(false);
     }
   }, []);
-
-  const handleImageSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files?.length) return;
-    e.target.value = "";
-    const list = Array.from(files).filter(isImageFile);
-    if (list.length < files.length) toast.error("已跳过非图片文件");
-    const newItems: Array<{ id: string; dataUrl: string }> = [];
-    for (const file of list) {
-      if (file.size > 25 * 1024 * 1024) {
-        toast.error("单张图片请小于 25MB");
-        continue;
-      }
-      try {
-        const dataUrl = await fileToImageDataUrl(file);
-        newItems.push({ id: `${Date.now()}-${newItems.length}`, dataUrl });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "图片处理失败");
-      }
-    }
-    if (!newItems.length) return;
-    setPendingImages((prev) => {
-      const merged = [...prev, ...newItems].slice(0, MAX_CHAT_IMAGES);
-      if (prev.length + newItems.length > MAX_CHAT_IMAGES) {
-        toast.error(`最多 ${MAX_CHAT_IMAGES} 张图片`);
-      }
-      return merged;
-    });
-  }, []);
-
-  const removePendingImage = useCallback((id: string) => {
-    setPendingImages((prev) => prev.filter((p) => p.id !== id));
-  }, []);
-
-  const showComposeDraft = pendingImages.length > 0 || !!attachment?.previewDataUrl;
-
-  useEffect(() => {
-    if (!showComposeDraft) return;
-    const id = requestAnimationFrame(() => {
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    });
-    return () => cancelAnimationFrame(id);
-  }, [showComposeDraft, pendingImages, attachment?.previewDataUrl]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -1156,9 +1021,7 @@ export function Agent() {
     return rows.sort((a, b) => a.sort - b.sort);
   }, [groups, liveItems]);
 
-  /* Whether connector runtime activity could be active *anywhere* 
- —
- the global kill switch must be
+  /* Whether connector runtime activity could be active *anywhere* 鈥?the global kill switch must be
    * available whenever it could (audit M2 / SPEC Consent 搂4). Driven off both
    * in-session SSE artifacts AND the shared `/live/status` snapshot, so a runner
    * started from the CLI or another browser session still surfaces the halt button
@@ -1193,9 +1056,7 @@ export function Agent() {
               ))}
             </div>
           )}
-          {!sessionLoading && messages.length === 0 && !showComposeDraft && (
-            <WelcomeScreen onExample={runPrompt} />
-          )}
+          {!sessionLoading && messages.length === 0 && <WelcomeScreen onExample={runPrompt} />}
 
           {timelineRows.map((row, rowIdx) => {
             if (row.render === "live") {
@@ -1230,67 +1091,13 @@ export function Agent() {
             );
           })}
 
-          {showComposeDraft && (
-            <div className="flex justify-end gap-3">
-              <div className="max-w-[min(100%,36rem)] w-full rounded-2xl rounded-tr-sm border border-dashed border-primary/35 bg-muted/15 px-4 py-3 text-sm">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
-                  待发送
-                </div>
-                <div className="space-y-3">
-                  {attachment?.previewDataUrl && (
-                    <div className="relative group/draftimg">
-                      <img
-                        src={attachment.previewDataUrl}
-                        alt=""
-                        className="w-full max-h-[min(70vh,720px)] object-contain rounded-lg border border-border/80 bg-background/50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setAttachment(null)}
-                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-background/90 border border-border text-muted-foreground hover:text-destructive flex items-center justify-center shadow-sm"
-                        title="移除"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                  {pendingImages.map((p) => (
-                    <div key={p.id} className="relative group/draftimg">
-                      <img
-                        src={p.dataUrl}
-                        alt=""
-                        className="w-full max-h-[min(70vh,720px)] object-contain rounded-lg border border-border/80 bg-background/50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removePendingImage(p.id)}
-                        className="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-background/90 border border-border text-muted-foreground hover:text-destructive flex items-center justify-center shadow-sm"
-                        title="移除"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {input.trim() ? (
-                  <div className="mt-3 pt-3 border-t border-border/60 text-foreground whitespace-pre-wrap leading-relaxed">
-                    {input}
-                  </div>
-                ) : null}
-              </div>
-              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                <User className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </div>
-          )}
-
           {/* Pre-stream placeholder: visible after Send, before first SSE event */}
           {status === "streaming" && !streamingText && toolCalls.length === 0 && (
             <div className="flex gap-3">
               <AgentAvatar />
               <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-muted-foreground pt-1">
                 <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-                <span>Agent is working…</span>
+                <span>Agent is working...</span>
               </div>
             </div>
           )}
@@ -1313,9 +1120,7 @@ export function Agent() {
             </div>
           )}
 
-          {/* Persistent streaming pulse bar 
- —
- always visible while agent is working */}
+          {/* Persistent streaming pulse bar 鈥?always visible while agent is working */}
           {status === "streaming" && (
             <div className="flex items-center gap-2 px-1 pt-1">
               <div className="h-0.5 flex-1 rounded-full bg-primary/20 overflow-hidden">
@@ -1527,9 +1332,7 @@ export function Agent() {
               )}
             </div>
           )}
-          {/* Persistent live runtime status panel 
- —
- sits alongside the goal/mandate
+          {/* Persistent live runtime status panel 鈥?sits alongside the goal/mandate
               badges (SPEC 搂7.5 + audit C2). Self-hides when no broker is configured. */}
           <RunnerStatus
             status={liveStatus}
@@ -1537,8 +1340,8 @@ export function Agent() {
             halted={liveIsHalted}
             onRefresh={refreshLiveStatus}
           />
-          {/* 非图片附件：仅显示文件名；图片在上方对话区展示 */}
-          {attachment && !attachment.previewDataUrl && (
+          {/* Attachment badge */}
+          {attachment && (
             <div className="flex items-center gap-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-xs font-medium">
                 <Paperclip className="h-3 w-3" />
@@ -1556,9 +1359,7 @@ export function Agent() {
               Uploading...
             </div>
           )}
-          {/* Persistent kill switch 
- —
- distinct from the per-turn Stop button
+          {/* Persistent kill switch 鈥?distinct from the per-turn Stop button
               above; disables all live order activity (SPEC Consent 搂4). */}
           {liveActive && (
             <div className="flex items-center gap-2">
@@ -1602,14 +1403,6 @@ export function Agent() {
                   >
                     <Paperclip className="h-4 w-4" />
                     Upload PDF document
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { imageInputRef.current?.click(); setShowUploadMenu(false); }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <ImagePlus className="h-4 w-4" />
-                    Add images
                   </button>
                   <div className="border-t my-1" />
                   <button
@@ -1669,14 +1462,6 @@ export function Agent() {
               type="file"
               accept=".pdf,.docx,.xlsx,.xls,.pptx,.csv,.tsv,.txt,.md,.log,.json,.yaml,.yml,.toml,.html,.xml,.rst,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff"
               onChange={handleFileSelect}
-              className="hidden"
-            />
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageSelect}
               className="hidden"
             />
             <textarea
@@ -1741,11 +1526,7 @@ export function Agent() {
             ) : (
               <button
                 type="submit"
-                disabled={
-                  goalComposerActive
-                    ? !input.trim()
-                    : !input.trim() && !attachment && pendingImages.length === 0
-                }
+                disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment)}
                 className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
               >
                 <Send className="h-4 w-4" />

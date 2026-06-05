@@ -1,5 +1,4 @@
 import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark } from "lucide-react";
-import { useI18n } from "@/lib/i18n";
 
 interface Example {
   title: string;
