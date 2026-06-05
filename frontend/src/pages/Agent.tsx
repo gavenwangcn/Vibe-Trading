@@ -226,7 +226,9 @@ export function Agent() {
   const lastEventRef = useRef(0);
   const sseTimeoutMsRef = useRef(90_000);
 
-  /* tool_progress coalescing 鈥?keep latest payload per-tool, flush once per rAF. */
+  /* tool_progress coalescing 
+ —
+ keep latest payload per-tool, flush once per rAF. */
   const pendingProgressRef = useRef<Map<string, NonNullable<ToolCallEntry["progress"]>>>(new Map());
   const progressRafRef = useRef(0);
 
@@ -259,7 +261,9 @@ export function Agent() {
   /* Shared `GET /live/status` snapshot. Owned here (single poller) and passed down
    * to RunnerStatus, so the global kill switch can be shown whenever connector runtime
    * could be active out-of-band (CLI/another session), not only off in-session SSE
-   * items (audit M2: always-available global halt 鈥?SPEC Consent 搂4). */
+   * items (audit M2: always-available global halt 
+ —
+ SPEC Consent 搂4). */
   const [liveStatus, setLiveStatus] = useState<LiveStatus | null>(null);
   /* The status endpoint is not wired on every backend; a 404/501 hides the panel
    * and removes status from the kill-switch visibility condition. */
@@ -277,7 +281,9 @@ export function Agent() {
 
   const urlSessionId = searchParams.get("session");
 
-  /* Smart scroll 鈥?only auto-scroll when near bottom */
+  /* Smart scroll 
+ —
+ only auto-scroll when near bottom */
   const isNearBottom = useCallback(() => {
     const el = listRef.current;
     if (!el) return true;
@@ -317,7 +323,7 @@ export function Agent() {
   useEffect(() => {
     onStatusChange((s) => {
       act().setSseStatus(s);
-      if (s === "reconnecting" && prevSseStatusRef.current === "connected") toast.warning("Connection lost, reconnecting鈥?);
+      if (s === "reconnecting" && prevSseStatusRef.current === "connected") toast.warning("Connection lost, reconnecting…");
       else if (s === "connected" && prevSseStatusRef.current === "reconnecting") toast.success("Connection restored");
       prevSseStatusRef.current = s;
     });
@@ -423,7 +429,9 @@ export function Agent() {
 
     connect(api.sseUrl(sid, { replay: "active" }), {
       text_delta: (d) => { touch(); act().appendDelta(String(d.delta || "")); scrollToBottom(); },
-      thinking_done: () => { touch(); /* don't flush 鈥?keep streaming text visible */ },
+      thinking_done: () => { touch(); /* don't flush 
+ —
+ keep streaming text visible */ },
 
       tool_call: (d) => {
         touch();
@@ -491,7 +499,9 @@ export function Agent() {
 
       "attempt.created": () => {
         touch();
-        // Backend has created a new attempt 鈥?ensure streaming state is active
+        // Backend has created a new attempt 
+ —
+ ensure streaming state is active
         // even if we connected mid-stream (SSE replay / page reload).
         if (act().status !== "streaming") act().setStatus("streaming");
       },
@@ -631,7 +641,9 @@ export function Agent() {
         // the RunnerStatus panel re-polls so its per-broker rows show "halted".
         setLiveHalted(halted);
         setLiveStatusRefresh((n) => n + 1);
-        toast.warning("Connector runtime halted 鈥?runner stopped, resting orders cancelled");
+        toast.warning("Connector runtime halted 
+ —
+ runner stopped, resting orders cancelled");
       },
 
       "live.resumed": (d) => {
@@ -1144,7 +1156,9 @@ export function Agent() {
     return rows.sort((a, b) => a.sort - b.sort);
   }, [groups, liveItems]);
 
-  /* Whether connector runtime activity could be active *anywhere* 鈥?the global kill switch must be
+  /* Whether connector runtime activity could be active *anywhere* 
+ —
+ the global kill switch must be
    * available whenever it could (audit M2 / SPEC Consent 搂4). Driven off both
    * in-session SSE artifacts AND the shared `/live/status` snapshot, so a runner
    * started from the CLI or another browser session still surfaces the halt button
@@ -1276,7 +1290,7 @@ export function Agent() {
               <AgentAvatar />
               <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-muted-foreground pt-1">
                 <Loader2 className="h-3 w-3 animate-spin text-primary shrink-0" />
-                <span>Agent is working鈥?/span>
+                <span>Agent is working…</span>
               </div>
             </div>
           )}
@@ -1299,7 +1313,9 @@ export function Agent() {
             </div>
           )}
 
-          {/* Persistent streaming pulse bar 鈥?always visible while agent is working */}
+          {/* Persistent streaming pulse bar 
+ —
+ always visible while agent is working */}
           {status === "streaming" && (
             <div className="flex items-center gap-2 px-1 pt-1">
               <div className="h-0.5 flex-1 rounded-full bg-primary/20 overflow-hidden">
@@ -1511,7 +1527,9 @@ export function Agent() {
               )}
             </div>
           )}
-          {/* Persistent live runtime status panel 鈥?sits alongside the goal/mandate
+          {/* Persistent live runtime status panel 
+ —
+ sits alongside the goal/mandate
               badges (SPEC 搂7.5 + audit C2). Self-hides when no broker is configured. */}
           <RunnerStatus
             status={liveStatus}
@@ -1538,7 +1556,9 @@ export function Agent() {
               Uploading...
             </div>
           )}
-          {/* Persistent kill switch 鈥?distinct from the per-turn Stop button
+          {/* Persistent kill switch 
+ —
+ distinct from the per-turn Stop button
               above; disables all live order activity (SPEC Consent 搂4). */}
           {liveActive && (
             <div className="flex items-center gap-2">
