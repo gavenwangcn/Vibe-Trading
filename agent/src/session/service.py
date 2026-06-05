@@ -178,14 +178,6 @@ class SessionService:
         """Return the message history."""
         return self.store.get_messages(session_id, limit)
 
-    def get_attempts(self, session_id: str) -> list[Attempt]:
-        """Return all execution attempts."""
-        return self.store.list_attempts(session_id)
-
-    def get_attempt(self, session_id: str, attempt_id: str) -> Optional[Attempt]:
-        """Return a single execution attempt."""
-        return self.store.get_attempt(session_id, attempt_id)
-
     def cancel_current(self, session_id: str) -> bool:
         """Cancel the currently running AgentLoop for a session.
 
@@ -209,7 +201,12 @@ class SessionService:
 
         try:
             messages = self.store.get_messages(session.session_id)
-            result = await self._run_with_agent(attempt, messages=messages, include_shell_tools=include_shell_tools)
+            result = await self._run_with_agent(
+                attempt,
+                messages=messages,
+                include_shell_tools=include_shell_tools,
+                session_config=dict(session.config),
+            )
             if result.get("status") == "success":
                 attempt.mark_completed(summary=result.get("content", ""))
             else:
@@ -250,6 +247,7 @@ class SessionService:
         messages: list = None,
         *,
         include_shell_tools: bool = False,
+        session_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute an attempt with the V5 AgentLoop.
 
@@ -257,6 +255,10 @@ class SessionService:
             attempt: Current execution attempt.
             messages: Session message history.
             include_shell_tools: Whether the registry may include shell tools.
+            session_config: Optional session-level config overrides. MCP server
+                definitions under the ``mcpServers`` key are merged on top of
+                the user config file via ``load_runtime_agent_config`` so each
+                session can extend or override the global MCP server list.
 
         Returns:
             Result dictionary containing status, run_dir, run_id, metrics, and related fields.
@@ -265,22 +267,44 @@ class SessionService:
         from src.providers.chat import ChatLLM
         from src.agent.loop import AgentLoop
         from src.memory.persistent import PersistentMemory
+        from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
         llm = ChatLLM()
         pm = PersistentMemory()
 
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
+        loop = asyncio.get_running_loop()
+
         sess = self.store.get_session(session_id)
-        session_config: Dict[str, Any] = dict(sess.config) if sess and sess.config else {}
+        if session_config is None:
+            session_config = dict(sess.config) if sess and sess.config else {}
+        safe_overrides = sanitize_session_overrides(session_config) if session_config else session_config
+        agent_config = load_runtime_agent_config(overrides=safe_overrides)
 
         def event_callback(event_type: str, data: Dict[str, Any]) -> None:
             """Forward AgentLoop events to the SSE event bus."""
             data["attempt_id"] = attempt_id
             self.event_bus.emit(session_id, event_type, data)
 
+        def _mcp_collision_warn(msg: str) -> None:
+            """Forward MCP server-name collision warnings to the operator event channel."""
+            self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
+
+        registry = await loop.run_in_executor(
+            _AGENT_EXECUTOR,
+            lambda: build_registry(
+                persistent_memory=pm,
+                include_shell_tools=include_shell_tools,
+                agent_config=agent_config,
+                session_id=session_id,
+                event_callback=event_callback,
+                warn_callback=_mcp_collision_warn,
+            ),
+        )
+
         agent = AgentLoop(
-            registry=build_registry(persistent_memory=pm, include_shell_tools=include_shell_tools),
+            registry=registry,
             llm=llm,
             event_callback=event_callback,
             max_iterations=50,
@@ -292,11 +316,9 @@ class SessionService:
         history = self._convert_messages_to_history(messages) if messages else None
 
         try:
-            loop = asyncio.get_running_loop()
             user_turn: Union[str, List[Dict[str, Any]]] = (
                 attempt.user_content if attempt.user_content is not None else attempt.prompt
             )
-
             result = await loop.run_in_executor(
                 _AGENT_EXECUTOR,
                 lambda ut=user_turn: agent.run(

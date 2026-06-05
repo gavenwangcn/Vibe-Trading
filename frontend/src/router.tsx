@@ -19,6 +19,9 @@ const Correlation = lazy(() =>
 const McpSettings = lazy(() =>
   import("@/pages/McpSettings").then((m) => ({ default: m.McpSettings })),
 );
+const AlphaZoo = lazy(() =>
+  import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
+);
 
 function PageLoader() {
   return (
@@ -47,6 +50,9 @@ export const router = createBrowserRouter([
       { path: "/compare", element: wrap(Compare) },
       { path: "/correlation", element: wrap(Correlation) },
       { path: "/mcp", element: wrap(McpSettings) },
+      { path: "/alpha-zoo", element: wrap(AlphaZoo) },
+      { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
+      { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
     ],
   },
 ]);

@@ -1,4 +1,4 @@
-import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen } from "lucide-react";
+import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
 interface Example {
@@ -106,6 +106,28 @@ const CATEGORIES: Category[] = [
     ],
   },
   {
+    label: "Trading Connectors",
+    icon: <Landmark className="h-4 w-4" />,
+    color: "text-cyan-400 border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/5",
+    examples: [
+      {
+        title: "Check Selected Connector",
+        desc: "List connector profiles and verify the selected one",
+        prompt: "List my trading connector profiles, show which one is selected, then check that selected connector. If it is not ready, tell me exactly what setup step is missing. Do not place or modify orders.",
+      },
+      {
+        title: "Analyze Connector Portfolio",
+        desc: "Read account summary and positions from the selected connector",
+        prompt: "Use the selected trading connector profile to summarize my account, positions, concentration, cash, and portfolio risk. Do not place or modify orders.",
+      },
+      {
+        title: "Quote & Trend",
+        desc: "Fetch a quote plus recent daily bars through the selected connector",
+        prompt: "Use the selected trading connector to fetch an AAPL quote and 30 daily bars, then summarize the current quote versus the recent trend. Keep it read-only.",
+      },
+    ],
+  },
+  {
     label: "Shadow Account",
     icon: <UserCircle2 className="h-4 w-4" />,
     color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
@@ -134,6 +156,7 @@ const CAPABILITY_CHIPS = [
   "29 个 Swarm 预设",
   "32 个 Agent 工具",
   "3 大市场：A 股 · 加密 · 港美股",
+  "Trading Connector Profiles",
   "分钟到日线级别",
   "4 种组合优化器",
   "15+ 风险指标",
@@ -151,8 +174,6 @@ interface Props {
 }
 
 export function WelcomeScreen({ onExample }: Props) {
-  const { t } = useI18n();
-
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8 text-center">
       <div className="space-y-3">
@@ -165,7 +186,7 @@ export function WelcomeScreen({ onExample }: Props) {
             你的专业金融 Agent 团队
           </p>
           <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
-            {t.describeStrategy}
+            Describe a trading strategy to get started.
           </p>
         </div>
       </div>
@@ -182,7 +203,7 @@ export function WelcomeScreen({ onExample }: Props) {
       </div>
 
       <div className="w-full max-w-2xl text-left space-y-4">
-        <p className="text-xs text-muted-foreground px-1">{t.examples}</p>
+        <p className="text-xs text-muted-foreground px-1">Try an example:</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CATEGORIES.map((cat) => (
             <div key={cat.label} className="space-y-2">
