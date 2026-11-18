@@ -31,7 +31,7 @@ git diff --check
 python -m compileall -q agent/cli
 python -m py_compile agent/api_server.py agent/mcp_server.py
 pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --tb=short -q
-pytest agent/tests/test_sdk_order_gate.py agent/tests/test_mandate_enforcement.py -q
+pytest agent/tests/test_core_agent_qa.py agent/tests/test_file_tool_sandbox_security.py -q
 cd frontend && npm ci && npm run build
 ```
 
@@ -62,19 +62,11 @@ For general Python changes:
 pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --tb=short -q
 ```
 
-For live/order safety changes:
+For document and web Q&A changes:
 
 ```bash
-pytest agent/tests/test_sdk_order_gate.py \
-  agent/tests/test_mandate_enforcement.py \
-  agent/tests/test_killswitch_blocks_orders.py \
-  agent/tests/test_readonly_default.py -q
-```
-
-For factor-zoo changes:
-
-```bash
-pytest agent/tests/factors/test_alpha_purity.py agent/tests/factors/test_lookahead.py -q
+pytest agent/tests/test_core_agent_qa.py \
+  agent/tests/test_file_tool_sandbox_security.py -q
 ```
 
 For frontend changes:

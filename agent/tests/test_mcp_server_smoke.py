@@ -40,26 +40,14 @@ INIT_TIMEOUT = 30.0
 # safe lower bound that still flags the deadlock quickly.
 CALL_TIMEOUT = 15.0
 
-# Tools we rely on as a baseline. The repo currently ships 35 tools; we
-# assert ``>= 30`` so unrelated tool additions / removals don't break the
-# test, but a regression that drops half the catalogue still fires.
-EXPECTED_MIN_TOOL_COUNT = 30
+# Document and web tools stay registered. Finance catalogue entries are gone.
+EXPECTED_MIN_TOOL_COUNT = 5
 REQUIRED_TOOL_NAMES = {
-    "analyze_options",
-    "get_market_data",
     "list_skills",
-    "start_research_goal",
-    "get_research_goal",
-    "add_goal_evidence",
-    "update_research_goal_status",
-    "trading_connections",
-    "trading_select_connection",
-    "trading_check",
-    "trading_account",
-    "trading_positions",
-    "trading_orders",
-    "trading_quote",
-    "trading_history",
+    "load_skill",
+    "read_url",
+    "read_document",
+    "web_search",
 }
 
 
@@ -134,10 +122,9 @@ def test_mcp_server_happy_path() -> None:
     """End-to-end smoke check for ``vibe-trading-mcp``.
 
     Verifies (1) the JSON-RPC handshake completes, (2) the tool catalogue
-    is registered, and (3) ``tools/call analyze_options`` returns a sane
-    numeric result without hanging. The hang case is the regression fixed
-    by PR #85; without the registry pre-warm, ``tools/call`` deadlocks
-    inside FastMCP's worker thread.
+    is registered, and (3) ``tools/call list_skills`` returns without hanging.
+    The hang case is the regression fixed by PR #85; without the registry
+    pre-warm, ``tools/call`` deadlocks inside FastMCP's worker thread.
     """
     env = os.environ.copy()
     env["PYTHONPATH"] = str(AGENT_DIR) + os.pathsep + env.get("PYTHONPATH", "")
@@ -194,38 +181,25 @@ def test_mcp_server_happy_path() -> None:
         missing = REQUIRED_TOOL_NAMES - tool_names
         assert not missing, f"required tools missing from catalogue: {sorted(missing)}"
 
-        # 3. tools/call analyze_options — pure CPU Black-Scholes; no network.
-        # If this hangs, the cause is the registry build deadlock, not a
-        # flaky data source.
+        # 3. tools/call list_skills — local only, no market-data network.
+        # If this hangs, the cause is the registry build deadlock.
         _send(proc, {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {
-                "name": "analyze_options",
-                "arguments": {"spot": 100.0, "strike": 105.0, "expiry_days": 30},
-            },
+            "params": {"name": "list_skills", "arguments": {}},
         })
         resp, info = _wait_for_id(q, 3, CALL_TIMEOUT)
         assert resp is not None, (
-            f"tools/call analyze_options did not respond within {CALL_TIMEOUT}s "
+            f"tools/call list_skills did not respond within {CALL_TIMEOUT}s "
             f"(status={info}). This is the symptom fixed by PR #85 — check "
             f"that mcp_server.main() still calls _get_registry() before mcp.run()."
         )
         assert "result" in resp, f"tools/call returned an error response: {resp}"
-
-        # Validate the numerical answer is at least in the right shape.
-        # 5% OTM call, 30 days, default vol/rate — price should be a small
-        # positive number, delta should sit between 0 and 1.
         data = _extract_tool_result(resp)
-        price = data.get("price")
-        delta = data.get("delta")
-        assert isinstance(price, (int, float)) and price > 0, (
-            f"expected positive price, got {price!r} from {data!r}"
-        )
-        assert isinstance(delta, (int, float)) and 0.0 <= delta <= 1.0, (
-            f"expected call delta in [0, 1], got {delta!r} from {data!r}"
-        )
+        rendered = json.dumps(data, ensure_ascii=False)
+        assert "doc-reader" in rendered
+        assert "web-reader" in rendered
     finally:
         try:
             proc.kill()

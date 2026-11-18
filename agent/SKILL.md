@@ -194,57 +194,7 @@ Create `~/.vibe-trading/agent.json`:
 }
 ```
 
-Ordinary external MCP tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`. Live-broker MCP servers are consumed through the connector-scoped `trading_*` tools instead of exposing raw `mcp_<broker>_*` tools to the agent.
-
-### Official IBKR MCP read-only probe
-
-Add Interactive Brokers' official MCP endpoint as a read-only external server:
-
-```json
-{
-  "mcpServers": {
-    "ibkr": {
-      "type": "streamableHttp",
-      "url": "https://api.ibkr.com/v1/api/mcp",
-      "auth": {
-        "type": "oauth",
-        "scopes": ["mcp.read"],
-        "clientName": "Vibe-Trading",
-        "cacheDir": "~/.vibe-trading/live/ibkr/oauth"
-      },
-      "enabledTools": ["*"]
-    }
-  }
-}
-```
-
-Authorize it with `vibe-trading connector authorize ibkr-live-official-mcp-readonly`. The wildcard is accepted
-only for this `mcp.read` probe. Generic `trading_account` and `trading_positions`
-calls stay disabled until IBKR publishes stable read tool names that Vibe-Trading
-can map safely; `mcp.write` requires an explicit tool allowlist and live
-order-guard handling. If IBKR issues a pre-registered OAuth client, add
-`clientId` and `clientSecret` inside `auth`.
-
-### Trading connector profiles
-
-The public trading surface is connector-first. Choose a connector profile, then
-paper/live is just an attribute under that connector.
-
-```bash
-pip install "vibe-trading-ai[ibkr]"
-vibe-trading connector list
-vibe-trading connector use ibkr-paper-local
-vibe-trading connector configure ibkr-paper-local --yes
-vibe-trading connector check
-vibe-trading connector account
-vibe-trading connector positions
-vibe-trading connector orders
-vibe-trading connector quote AAPL
-vibe-trading connector history AAPL --duration "30 D" --bar-size "1 day"
-```
-
-Default ports are TWS paper `7497`, IB Gateway paper `4002`, TWS live-readonly
-`7496`, and IB Gateway live-readonly `4001`.
+Ordinary external MCP tools appear automatically in every `vibe-trading run` / `vibe-trading chat` call. They are injected after local tools under stable names: `mcp_<server>_<tool>`. Broker connectors, including IBKR TWS and Robinhood, are not part of this agent.
 
 ### Config fields
 

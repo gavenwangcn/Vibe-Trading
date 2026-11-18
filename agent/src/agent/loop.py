@@ -376,6 +376,11 @@ class AgentLoop:
 
         trace = TraceWriter(run_dir)
         trace.write({"type": "start", "prompt": trace_prompt_preview(user_message, 500)})
+        logger.info(
+            "AgentLoop start session=%s run=%s history=%d est_tokens=%d prompt=%r",
+            session_id or "-", run_dir.name, len(history or []),
+            estimate_tokens(messages), trace_prompt_preview(user_message, 160),
+        )
 
         iteration = 0
         final_content = ""
@@ -414,7 +419,10 @@ class AgentLoop:
                     logger.info(f"Auto compact triggered: {tokens} tokens > {TOKEN_THRESHOLD}")
                     self._auto_compact(messages, run_dir, trace)
 
-                logger.info(f"ReAct iteration {iteration}/{self.max_iterations}")
+                logger.info(
+                    "ReAct iteration %d/%d session=%s est_tokens=%d",
+                    iteration, self.max_iterations, session_id or "-", tokens,
+                )
 
                 # Inject wrap-up nudge when approaching iteration limit.
                 # Skip on the first iteration (tiny budgets) and on the last
@@ -446,10 +454,23 @@ class AgentLoop:
                 if is_last_iteration:
                     trace.write({"type": "forced_text_only", "iter": iteration})
 
+                logger.info(
+                    "llm request start iter=%d messages=%d tools=%d forced_text=%s",
+                    iteration, len(messages), 0 if tool_defs is None else len(tool_defs),
+                    is_last_iteration,
+                )
+                llm_started = _time.perf_counter()
                 response = self.llm.stream_chat(
                     messages,
                     tools=tool_defs,
                     on_text_chunk=_on_text_chunk,
+                )
+                logger.info(
+                    "llm request done iter=%d elapsed=%.2fs finish=%s tool_calls=%s text_chars=%d",
+                    iteration, _time.perf_counter() - llm_started,
+                    getattr(response, "finish_reason", None),
+                    [getattr(tc, "name", "") for tc in (getattr(response, "tool_calls", None) or [])] or "-",
+                    len(getattr(response, "content", None) or ""),
                 )
                 usage = getattr(response, "usage_metadata", None) or {}
                 if usage:
@@ -558,6 +579,10 @@ class AgentLoop:
 
                     trace.write({"type": "answer", "iter": iteration, "content": final_content[:2000]})
                     react_trace.append({"type": "answer", "content": final_content[:500]})
+                    logger.info(
+                        "AgentLoop answer iter=%d chars=%d",
+                        iteration, len(final_content),
+                    )
                     break
 
                 messages.append(
@@ -684,6 +709,11 @@ class AgentLoop:
 
         if not to_execute:
             return compact_requested, focus_topic
+
+        logger.info(
+            "tools execute count=%d names=%s",
+            len(to_execute), [tc.name for tc in to_execute],
+        )
 
         # Batch execute: consecutive readonly → parallel, write → serial
         if len(to_execute) == 1:
@@ -823,9 +853,13 @@ class AgentLoop:
 
         self._emit("tool_call", {"tool": tc.name, "arguments": {k: str(v)[:200] for k, v in args.items()}, "iter": iteration})
         trace.write({"type": "tool_call", "iter": iteration, "tool": tc.name, "call_id": tc.id, "args": {k: str(v)[:200] for k, v in args.items()}})
-        logger.info(f"Tool call: {tc.name}({list(args.keys())})")
+        logger.info("tool start name=%s args=%s", tc.name, list(args.keys()))
 
         result, elapsed_ms = self._invoke_tool(tc.name, args)
+        logger.info(
+            "tool done name=%s elapsed_ms=%d chars=%d",
+            tc.name, elapsed_ms, len(result or ""),
+        )
 
         self._finalize_tool_result(tc, result, elapsed_ms, context, messages, trace, react_trace, iteration)
 
@@ -854,6 +888,7 @@ class AgentLoop:
         def _on_heartbeat(payload: Dict[str, Any]) -> None:
             self._emit("tool_heartbeat", payload)
 
+        logger.info("tool invoke name=%s", tool_name)
         _set_emitter(_on_progress)
         t0 = _time.perf_counter()
         try:

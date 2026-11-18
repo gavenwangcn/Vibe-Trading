@@ -882,18 +882,6 @@ def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         The full proposal dict, or ``None`` when not found / unreadable.
     """
-    try:
-        from src.live.paths import live_root
-
-        for proposal_path in live_root().glob(f"*/proposals/{proposal_id}.json"):
-            try:
-                data = json.loads(proposal_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(data, dict) and data.get("type") == "mandate.proposal":
-                return data
-    except Exception:  # noqa: BLE001 — relay must never break the turn
-        pass
     return None
 
 
@@ -1702,7 +1690,6 @@ def _show_settings() -> None:
     else:
         credential_table.add_row("Provider key", "(unknown provider)")
         credential_ready = False
-    credential_table.add_row("TUSHARE_TOKEN", "***" if os.getenv("TUSHARE_TOKEN") else "(optional)")
 
     panels = [
         Panel(provider_table, title=f"Provider {_state_badge(provider if provider != '(not set)' else None)}", border_style="cyan", padding=(0, 1)),
@@ -2058,102 +2045,8 @@ class _SwarmDashboard:
 
 def cmd_swarm_run_live(preset: str, vars_json: Optional[str] = None) -> None:
     """Run a swarm preset with Rich Live dashboard."""
-    from rich.live import Live
-    from src.config import load_swarm_agent_config
-    from src.swarm.runtime import SwarmRuntime
-    from src.swarm.store import SwarmStore
-    from src.swarm.models import RunStatus
-
-    user_vars: Dict[str, str] = {}
-    if vars_json:
-        try:
-            user_vars = json.loads(vars_json)
-        except json.JSONDecodeError as exc:
-            console.print(f"[red]Invalid JSON: {exc}[/red]")
-            return
-
-    store = SwarmStore(base_dir=SWARM_DIR)
-    agent_config = load_swarm_agent_config()
-    runtime = SwarmRuntime(store=store, agent_config=agent_config)
-    _agent_color_map.clear()
-
-    console.print(f"\n[dim]Starting swarm:[/dim] [cyan]{preset}[/cyan]")
-    if user_vars:
-        console.print(f"[dim]Variables:[/dim] {json.dumps(user_vars, ensure_ascii=False)}")
-
-    dashboard = _SwarmDashboard(preset, "")
-
-    try:
-        run = runtime.start_run(
-            preset,
-            user_vars,
-            live_callback=dashboard.handle_event,
-            include_shell_tools=True,
-        )
-    except FileNotFoundError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return
-    except ValueError as exc:
-        console.print(f"[red]DAG validation failed: {exc}[/red]")
-        return
-
-    dashboard.run_id = run.id
-
-    with Live(dashboard.build_table(), console=console, refresh_per_second=4, transient=False) as live:
-        try:
-            while True:
-                time.sleep(0.25)
-                live.update(dashboard.build_table())
-                current = store.load_run(run.id)
-                if current is None:
-                    console.print("[red]Run record lost[/red]")
-                    return
-                if current.status in (RunStatus.completed, RunStatus.failed, RunStatus.cancelled):
-                    dashboard.finished = True
-                    dashboard.final_status = current.status.value
-                    live.update(dashboard.build_table())
-                    break
-        except KeyboardInterrupt:
-            console.print("\n[yellow]Cancelling...[/yellow]")
-            runtime.cancel_run(run.id)
-            time.sleep(1)
-            current = store.load_run(run.id)
-
-    if current is None:
-        return
-
-    # Print completed agent summaries
-    for agent_name, summary in dashboard.completed_summaries:
-        style = _get_agent_style(agent_name)
-        console.print(f"\n[{style}]\u2500\u2500 {agent_name} \u2500\u2500[/{style}]")
-        # Truncate to first meaningful chunk
-        lines = summary.strip().split("\n")
-        preview = "\n".join(lines[:8])
-        if len(lines) > 8:
-            preview += "\n[dim]...[/dim]"
-        console.print(preview)
-
-    # Final report
-    status_color = {
-        RunStatus.completed: "green",
-        RunStatus.failed: "red",
-        RunStatus.cancelled: "yellow",
-    }.get(current.status, "dim")
-
-    elapsed_total = time.monotonic() - dashboard.start_time
-    mins, secs = divmod(int(elapsed_total), 60)
-
-    tokens_in = current.total_input_tokens
-    tokens_out = current.total_output_tokens
-    token_str = ""
-    if tokens_in or tokens_out:
-        token_str = f"\nTokens: ~{tokens_in + tokens_out:,} (in: {tokens_in:,} out: {tokens_out:,})"
-
-    if current.final_report:
-        console.print("\n[bold]\u2500\u2500 Final Report \u2500\u2500[/bold]")
-        console.print(current.final_report[:2000])
-
-    console.print(f"\n[{status_color}]{current.status.value.upper()}[/{status_color}]  Time: {mins}m {secs}s{token_str}")
+    print('This command has been removed.')
+    return 2
 
 
 # ---------------------------------------------------------------------------
@@ -2339,35 +2232,8 @@ def cmd_trace(run_id: str) -> None:
 
 def cmd_swarm_presets() -> None:
     """List available swarm presets."""
-    from src.swarm.presets import list_presets
-
-    presets = list_presets()
-    if not presets:
-        console.print("[dim]No presets available[/dim]")
-        return
-
-    table = Table(title="Swarm Presets", show_lines=False)
-    table.add_column("Name", style="cyan", no_wrap=True)
-    table.add_column("Title")
-    table.add_column("Agents", width=8, justify="right")
-    table.add_column("Variables")
-    table.add_column("Description", max_width=40)
-
-    for p in presets:
-        raw_vars = p.get("variables", [])
-        var_names = [
-            v["name"] if isinstance(v, dict) else str(v) for v in raw_vars
-        ]
-        vars_str = ", ".join(var_names)
-        table.add_row(
-            p["name"],
-            p.get("title", ""),
-            str(p.get("agent_count", 0)),
-            vars_str,
-            p.get("description", "")[:40],
-        )
-
-    console.print(table)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_swarm_run(preset: str, vars_json: Optional[str] = None) -> None:
@@ -2377,175 +2243,26 @@ def cmd_swarm_run(preset: str, vars_json: Optional[str] = None) -> None:
 
 def cmd_swarm_inspect(preset: str) -> int:
     """Inspect a swarm preset without starting workers."""
-    from src.swarm.presets import inspect_preset
-
-    try:
-        report = inspect_preset(preset)
-    except FileNotFoundError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR
-    except Exception as exc:
-        console.print(f"[red]Failed to inspect preset:[/red] {exc}")
-        return EXIT_RUN_FAILED
-
-    status = "OK" if report["valid"] else "INVALID"
-    status_color = "green" if report["valid"] else "red"
-    lines = [
-        f"[bold]Preset:[/bold] {report['name']}",
-        f"[bold]Title:[/bold] {report.get('title') or '-'}",
-        f"[bold]Status:[/bold] [{status_color}]{status}[/{status_color}]",
-        f"[bold]Agents:[/bold] {len(report['agents'])}",
-        f"[bold]Tasks:[/bold] {len(report['tasks'])}",
-        f"[bold]Variables:[/bold] {', '.join(report['variables']) or '-'}",
-    ]
-    if report.get("description"):
-        lines.append(f"[bold]Description:[/bold] {report['description']}")
-    console.print(Panel("\n".join(lines), border_style=status_color, title="Swarm Preset Inspect"))
-
-    agent_table = Table(title="Agents", show_lines=False)
-    agent_table.add_column("ID", style="cyan", no_wrap=True)
-    agent_table.add_column("Role")
-    agent_table.add_column("Tools", max_width=40)
-    for agent in report["agents"]:
-        agent_table.add_row(
-            agent["id"],
-            agent.get("role", ""),
-            ", ".join(agent.get("tools", [])),
-        )
-    console.print(agent_table)
-
-    dag_table = Table(title="DAG Execution Plan", show_lines=False)
-    dag_table.add_column("Layer", justify="right", width=6)
-    dag_table.add_column("Task", style="cyan")
-    dag_table.add_column("Agent")
-    dag_table.add_column("Depends On")
-    task_details = {task["id"]: task for task in report["tasks"]}
-    for idx, layer in enumerate(report["layers"], start=1):
-        for item in layer:
-            task = task_details[item["task_id"]]
-            dag_table.add_row(
-                str(idx),
-                item["task_id"],
-                item["agent_id"],
-                ", ".join(task.get("depends_on", [])) or "-",
-            )
-    console.print(dag_table)
-
-    validation_table = Table(title="Validation", show_lines=False)
-    validation_table.add_column("Level", width=8)
-    validation_table.add_column("Message")
-    if report["errors"]:
-        for error in report["errors"]:
-            validation_table.add_row("[red]ERROR[/red]", error)
-    if report["warnings"]:
-        for warning in report["warnings"]:
-            validation_table.add_row("[yellow]WARN[/yellow]", warning)
-    if not report["errors"] and not report["warnings"]:
-        validation_table.add_row("[green]OK[/green]", "No issues found")
-    console.print(validation_table)
-
-    return EXIT_SUCCESS if report["valid"] else EXIT_RUN_FAILED
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_swarm_list() -> None:
     """List swarm run history."""
-    from src.swarm.store import SwarmStore
-
-    store = SwarmStore(base_dir=SWARM_DIR)
-    runs = store.list_runs()
-
-    if not runs:
-        console.print("[dim]No swarm runs yet[/dim]")
-        return
-
-    table = Table(title="Swarm Runs", show_lines=False)
-    table.add_column("Run ID", style="cyan", no_wrap=True)
-    table.add_column("Preset")
-    table.add_column("Status", width=12)
-    table.add_column("Tasks", width=6, justify="right")
-    table.add_column("Created", width=20)
-
-    for run in runs:
-        sc = {
-            "completed": "green",
-            "failed": "red",
-            "cancelled": "yellow",
-            "running": "blue",
-        }.get(run.status.value, "dim")
-        table.add_row(
-            run.id,
-            run.preset_name,
-            f"[{sc}]{run.status.value}[/{sc}]",
-            str(len(run.tasks)),
-            run.created_at[:19],
-        )
-
-    console.print(table)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_swarm_show(run_id: str) -> None:
     """Show swarm run details."""
-    from src.swarm.store import SwarmStore
-    from src.swarm.models import TaskStatus
-
-    store = SwarmStore(base_dir=SWARM_DIR)
-    run = store.load_run(run_id)
-
-    if run is None:
-        console.print(f"[red]Swarm run {run_id} not found[/red]")
-        return
-
-    status_color = {
-        "completed": "green",
-        "failed": "red",
-        "cancelled": "yellow",
-        "running": "blue",
-    }.get(run.status.value, "dim")
-
-    lines = [
-        f"[bold]Status:[/bold] [{status_color}]{run.status.value.upper()}[/{status_color}]",
-        f"[bold]Preset:[/bold] {run.preset_name}",
-        f"[bold]Created:[/bold] {run.created_at}",
-    ]
-    if run.completed_at:
-        lines.append(f"[bold]Completed:[/bold] {run.completed_at}")
-    if run.user_vars:
-        lines.append(f"[bold]Variables:[/bold] {json.dumps(run.user_vars, ensure_ascii=False)}")
-
-    tokens_in = run.total_input_tokens
-    tokens_out = run.total_output_tokens
-    if tokens_in or tokens_out:
-        lines.append(f"[bold]Tokens:[/bold] ~{tokens_in + tokens_out:,} (in: {tokens_in:,} out: {tokens_out:,})")
-
-    lines.append(f"\n[bold]Tasks ({len(run.tasks)}):[/bold]")
-    for task in run.tasks:
-        tc = "green" if task.status == TaskStatus.completed else "red" if task.status == TaskStatus.failed else "dim"
-        dep_str = f" (deps: {', '.join(task.depends_on)})" if task.depends_on else ""
-        task_line = f"  [{tc}]{task.id}[/{tc}] -> {task.agent_id}{dep_str} [{task.status.value}]"
-        lines.append(task_line)
-        if task.summary:
-            lines.append(f"    {task.summary[:100]}")
-        if task.error:
-            lines.append(f"    [red]{task.error[:100]}[/red]")
-
-    if run.final_report:
-        lines.append(f"\n[bold]Final Report:[/bold]\n{run.final_report[:800]}")
-
-    console.print(Panel("\n".join(lines), border_style=status_color, title=run_id))
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_swarm_cancel(run_id: str) -> None:
     """Cancel a swarm run."""
-    from src.swarm.runtime import SwarmRuntime
-    from src.swarm.store import SwarmStore
-
-    store = SwarmStore(base_dir=SWARM_DIR)
-    runtime = SwarmRuntime(store=store)
-
-    if runtime.cancel_run(run_id):
-        console.print(f"[yellow]Cancel signal sent: {run_id}[/yellow]")
-    else:
-        console.print(f"[red]Run {run_id} not found or already finished[/red]")
+    print('This command has been removed.')
+    return 2
 
 
 # ---------------------------------------------------------------------------
@@ -2712,72 +2429,6 @@ def cmd_provider_login(provider: str) -> int:
 # connector profiles.
 # ---------------------------------------------------------------------------
 
-_DEFAULT_LIVE_BROKER = "robinhood"
-
-
-def _live_api_base() -> str:
-    """Return the base URL of the running API server for runner-control calls.
-
-    Mirrors :func:`cli.main._commit_mandate`: the base is read from
-    ``VIBE_TRADING_API_URL`` (falling back to ``http://127.0.0.1:8000``). The
-    persistent runner (SPEC §7.5) is controlled through the R6 surface endpoints
-    (``POST /live/runner/start|stop`` / ``GET /live/status``), never from the
-    agent loop, so the CLI only ever relays intent.
-
-    Returns:
-        The API base URL with any trailing slash removed.
-    """
-    return os.environ.get("VIBE_TRADING_API_URL", "http://127.0.0.1:8000").rstrip("/")
-
-
-def _live_api_call(method: str, path: str, *, body: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Call an R6 live-runner endpoint and decode the JSON response.
-
-    Args:
-        method: HTTP verb (``"GET"`` or ``"POST"``).
-        path: Endpoint path beginning with ``/`` (e.g. ``"/live/runner/start"``).
-        body: JSON request body for ``POST`` calls.
-
-    Returns:
-        The decoded response object on success, or an ``{"status": "error",
-        "error": ...}`` envelope when the server is unreachable / returns a
-        non-2xx status — so a caller can surface a clean message instead of a
-        traceback when no server is running.
-    """
-    import httpx
-
-    url = f"{_live_api_base()}{path}"
-    try:
-        if method.upper() == "GET":
-            response = httpx.get(url, timeout=30.0)
-        else:
-            response = httpx.post(url, json=body or {}, timeout=30.0)
-        response.raise_for_status()
-        return response.json()
-    except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
-        return {"status": "error", "error": str(exc)}
-
-
-def _live_server_config(broker: str):
-    """Resolve the protected MCP server config for ``broker``.
-
-    The config is read at boot from the user-side protected agent config file
-    (never from caller input / agent tool args / ``variables``), exactly as the
-    #142 swarm-config trust template requires.
-
-    Args:
-        broker: Broker key, e.g. ``"robinhood"``.
-
-    Returns:
-        The :class:`MCPServerConfig` for ``broker``, or ``None`` when the broker
-        has no entry in the protected config.
-    """
-    from src.config.loader import load_agent_config
-
-    agent_config = load_agent_config()
-    servers = getattr(agent_config, "mcp_servers", {}) or {}
-    return servers.get(broker.strip().lower())
-
 
 def cmd_live_authorize(broker: str) -> int:
     """Bootstrap the OAuth handshake for a live broker channel (desktop only).
@@ -2793,43 +2444,8 @@ def cmd_live_authorize(broker: str) -> int:
     Returns:
         Process exit code.
     """
-    key = broker.strip().lower()
-    server_config = _live_server_config(key)
-    if server_config is None:
-        console.print(
-            f"[red]No live channel configured for '{key}'.[/red] "
-            "Add the broker's mcpServers entry to ~/.vibe-trading/agent.json first."
-        )
-        return EXIT_USAGE_ERROR
-    if getattr(server_config, "auth", None) is None:
-        console.print(
-            f"[red]Live channel '{key}' has no OAuth auth configured[/red] — "
-            "cannot authorize."
-        )
-        return EXIT_USAGE_ERROR
-
-    console.print(f"[cyan]Opening browser to authorize {key}…[/cyan]")
-    console.print(
-        "[dim]Complete the sign-in in your browser; this terminal will continue "
-        "once the broker redirects back.[/dim]"
-    )
-    try:
-        from src.tools.mcp import build_mcp_tool_wrappers
-
-        tools = build_mcp_tool_wrappers(key, server_config)
-    except Exception as exc:  # noqa: BLE001 — surface any handshake failure
-        console.print(f"[red]Authorization failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-
-    console.print(
-        f"[green]Authorized {key}[/green] "
-        f"[dim]({len(tools)} read-only tool(s) available)[/dim]"
-    )
-    console.print(
-        "[dim]The channel is read-only until you commit a mandate and enable "
-        "order tools. Use `vibe-trading connector status` to check state.[/dim]"
-    )
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def _format_expiry_countdown(expires_at: str) -> str:
@@ -2877,30 +2493,7 @@ def _add_runner_liveness_rows(table: Table, broker: str) -> None:
         table: The Rich table being built by :func:`cmd_live_status`.
         broker: Broker key the runner is bound to.
     """
-    runner_id = _runner_id_for(broker)
-    try:
-        from src.live.runtime.liveness import is_runner_alive, last_tick
-    except Exception:  # noqa: BLE001 — liveness lands concurrently; degrade cleanly
-        table.add_row("Runner", "[dim]unknown (runtime not available)[/dim]")
-        return
-
-    try:
-        alive = is_runner_alive(runner_id)
-    except Exception as exc:  # noqa: BLE001 — never let a status read raise
-        table.add_row("Runner", f"[dim]unknown ({exc})[/dim]")
-        return
-
-    if alive:
-        table.add_row("Runner", "[green]running[/green]")
-    else:
-        table.add_row("Runner", "[yellow]stopped[/yellow]")
-
-    try:
-        tick = last_tick(runner_id)
-    except Exception:  # noqa: BLE001
-        tick = None
-    if tick is not None:
-        table.add_row("  Last tick", _format_last_tick(tick))
+    return None
 
 
 def _format_last_tick(tick: Any) -> str:
@@ -2948,56 +2541,8 @@ def cmd_live_status(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code.
     """
-    from src.live.halt import halt_flag_set, read_halt
-    from src.live.mandate.model import MANDATE_SCHEMA_VERSION
-    from src.live.mandate.store import load_mandate
-
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-
-    table = Table(title=f"Live channel: {key}", box=box.SIMPLE)
-    table.add_column("Field", style="cyan", no_wrap=True)
-    table.add_column("Value")
-
-    server_config = _live_server_config(key)
-    authorized = server_config is not None and getattr(server_config, "auth", None) is not None
-    table.add_row("Configured", "yes" if server_config is not None else "[red]no[/red]")
-    table.add_row("OAuth auth", "yes" if authorized else "no")
-
-    halted = halt_flag_set(key)
-    if halted:
-        meta = read_halt(key) or read_halt() or {}
-        reason = meta.get("reason", "")
-        by = meta.get("by", "")
-        detail = f" [dim]({by}: {reason})[/dim]" if (by or reason) else ""
-        table.add_row("Halt", f"[bold red]HALTED[/bold red]{detail}")
-    else:
-        table.add_row("Halt", "[green]clear[/green]")
-
-    _add_runner_liveness_rows(table, key)
-
-    mandate = load_mandate(key)
-    if mandate is None:
-        table.add_row("Mandate", "[yellow]none on file[/yellow] (read-only)")
-    elif mandate.schema_version != MANDATE_SCHEMA_VERSION:
-        table.add_row(
-            "Mandate",
-            f"[red]unknown schema v{mandate.schema_version}[/red] (gate fail-closed)",
-        )
-    else:
-        caps = mandate.hard_caps
-        table.add_row("Mandate", "[green]active[/green]")
-        table.add_row("  Max order", f"${caps.max_order_notional_usd:,.0f}")
-        table.add_row("  Max exposure", f"${caps.max_total_exposure_usd:,.0f}")
-        table.add_row("  Max leverage", f"{caps.max_leverage:g}x")
-        table.add_row("  Trades/day", str(caps.max_trades_per_day))
-        table.add_row(
-            "  Instruments",
-            ", ".join(i.value for i in caps.allowed_instruments) or "[red]none[/red]",
-        )
-        table.add_row("  Expires", _format_expiry_countdown(mandate.consent.expires_at))
-
-    console.print(table)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_mandate(broker: Optional[str] = None) -> int:
@@ -3009,26 +2554,8 @@ def cmd_live_mandate(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code. ``EXIT_RUN_FAILED`` when no mandate is on file.
     """
-    from dataclasses import asdict
-
-    from src.live.mandate.store import load_mandate
-
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    mandate = load_mandate(key)
-    if mandate is None:
-        console.print(
-            f"[yellow]No committed mandate for '{key}'.[/yellow] "
-            "The channel is read-only until a mandate is committed via the consent flow."
-        )
-        return EXIT_RUN_FAILED
-
-    payload = asdict(mandate)
-    # asdict leaves enums as Enum members; render their string values.
-    caps = payload["hard_caps"]
-    caps["allowed_instruments"] = [i.value for i in mandate.hard_caps.allowed_instruments]
-    payload["universe"]["asset_classes"] = [a.value for a in mandate.universe.asset_classes]
-    console.print_json(data=payload)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_halt(broker: Optional[str] = None) -> int:
@@ -3044,15 +2571,8 @@ def cmd_live_halt(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code.
     """
-    from src.live.halt import trip_halt
-
-    target = broker.strip().lower() if broker else None
-    path = trip_halt(by="cli", reason="cli live halt", broker=target)
-    scope = target or "ALL brokers"
-    console.print(f"[bold red]Live trading halted[/bold red] for {scope}.")
-    console.print(f"[dim]Sentinel: {path}[/dim]")
-    console.print("[dim]Run `vibe-trading connector resume` to re-enable.[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_resume(broker: Optional[str] = None) -> int:
@@ -3065,16 +2585,8 @@ def cmd_live_resume(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code.
     """
-    from src.live.halt import clear_halt
-
-    target = broker.strip().lower() if broker else None
-    cleared = clear_halt(broker=target)
-    scope = target or "ALL brokers"
-    if cleared:
-        console.print(f"[green]Halt cleared[/green] for {scope}.")
-    else:
-        console.print(f"[dim]No active halt for {scope}.[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_revoke(broker: str) -> int:
@@ -3089,46 +2601,8 @@ def cmd_live_revoke(broker: str) -> int:
     Returns:
         Process exit code.
     """
-    from src.live.paths import broker_dir
-
-    key = broker.strip().lower()
-    try:
-        base = broker_dir(key)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR
-
-    removed: list[str] = []
-
-    # OAuth token cache. Prefer the configured cache_dir; fall back to the
-    # canonical per-broker oauth/ subtree.
-    server_config = _live_server_config(key)
-    cache_dir: Optional[Path] = None
-    auth = getattr(server_config, "auth", None) if server_config is not None else None
-    if auth is not None and getattr(auth, "cache_dir", None):
-        cache_dir = Path(auth.cache_dir).expanduser()
-    if cache_dir is None or not cache_dir.exists():
-        cache_dir = base / "oauth"
-    if cache_dir.exists():
-        shutil.rmtree(cache_dir, ignore_errors=True)
-        removed.append(f"OAuth token cache ({cache_dir})")
-
-    mandate_path = base / "mandate.json"
-    if mandate_path.exists():
-        try:
-            mandate_path.unlink()
-            removed.append(f"mandate ({mandate_path})")
-        except OSError as exc:
-            console.print(f"[red]Failed to delete mandate: {exc}[/red]")
-            return EXIT_RUN_FAILED
-
-    if removed:
-        console.print(f"[green]Revoked live channel '{key}'.[/green]")
-        for item in removed:
-            console.print(f"  [dim]- removed {item}[/dim]")
-    else:
-        console.print(f"[dim]Nothing to revoke for '{key}' (no token or mandate on file).[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_start(broker: Optional[str] = None) -> int:
@@ -3146,21 +2620,8 @@ def cmd_live_start(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
     """
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    result = _live_api_call(
-        "POST", "/live/runner/start", body={"broker": key, "foreground": False}
-    )
-    if result.get("status") == "error":
-        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
-        return EXIT_RUN_FAILED
-
-    runner_id = result.get("runner_id") or _runner_id_for(key)
-    console.print(f"[green]Live runner started[/green] for {key} [dim]({runner_id})[/dim].")
-    console.print("[dim]Check it with `vibe-trading connector status`.[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_stop(broker: Optional[str] = None) -> int:
@@ -3176,17 +2637,8 @@ def cmd_live_stop(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code. ``EXIT_RUN_FAILED`` when the server is unreachable.
     """
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    result = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
-    if result.get("status") == "error":
-        console.print(f"[red]Could not stop the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
-        return EXIT_RUN_FAILED
-
-    console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_live_run(broker: Optional[str] = None) -> int:
@@ -3204,59 +2656,8 @@ def cmd_live_run(broker: Optional[str] = None) -> int:
     Returns:
         Process exit code.
     """
-    key = (broker or _DEFAULT_LIVE_BROKER).strip().lower()
-    runner_id = _runner_id_for(key)
-
-    result = _live_api_call(
-        "POST", "/live/runner/start", body={"broker": key, "foreground": True}
-    )
-    if result.get("status") == "error":
-        console.print(f"[red]Could not start the live runner:[/red] {result.get('error')}")
-        console.print(
-            "[dim]Is the API server running? Start it with `vibe-trading serve`.[/dim]"
-        )
-        return EXIT_RUN_FAILED
-
-    console.print(
-        f"[green]Live runner running[/green] for {key} [dim]({runner_id})[/dim] — "
-        "press Ctrl+C to stop."
-    )
-
-    try:
-        from src.live.runtime.liveness import is_runner_alive, last_tick
-    except Exception:  # noqa: BLE001 — runtime lands concurrently; fall back to a wait
-        is_runner_alive = None  # type: ignore[assignment]
-        last_tick = None  # type: ignore[assignment]
-
-    def _panel() -> Panel:
-        alive = bool(is_runner_alive(runner_id)) if is_runner_alive else True
-        state = "[green]running[/green]" if alive else "[yellow]stopped[/yellow]"
-        lines = [f"Runner: {state}", f"Broker: {key}"]
-        if last_tick:
-            try:
-                tick = last_tick(runner_id)
-            except Exception:  # noqa: BLE001
-                tick = None
-            if tick is not None:
-                lines.append(f"Last tick: {_format_last_tick(tick)}")
-        return Panel("\n".join(lines), title=f"live run · {key}", box=box.ROUNDED)
-
-    try:
-        with Live(_panel(), console=console, refresh_per_second=2, transient=False) as live:
-            while True:
-                time.sleep(1.0)
-                live.update(_panel())
-                if is_runner_alive and not is_runner_alive(runner_id):
-                    break
-    except KeyboardInterrupt:
-        console.print("\n[dim]Stopping live runner…[/dim]")
-    finally:
-        stop = _live_api_call("POST", "/live/runner/stop", body={"broker": key})
-        if stop.get("status") == "error":
-            console.print(f"[red]Failed to stop the runner cleanly:[/red] {stop.get('error')}")
-        else:
-            console.print(f"[yellow]Live runner stopped[/yellow] for {key}.")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 # ---------------------------------------------------------------------------
@@ -3273,51 +2674,19 @@ def _profile_id(value: Optional[str]) -> Optional[str]:
 
 def _selected_profile_or(value: Optional[str]):
     """Resolve the selected or explicit trading profile."""
-    from src.trading.profiles import profile_by_id
-
-    return profile_by_id(_profile_id(value))
+    return None
 
 
 def cmd_connector_list() -> int:
     """List selectable trading connector profiles."""
-    from src.trading.profiles import list_profiles, load_selected_profile_id
-
-    selected = load_selected_profile_id()
-    table = Table(title="Trading Connectors", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Selected", justify="center", width=8)
-    table.add_column("Profile")
-    table.add_column("Connector")
-    table.add_column("Env")
-    table.add_column("Transport")
-    table.add_column("Capabilities")
-    for profile in list_profiles():
-        table.add_row(
-            "[green]*[/green]" if profile.id == selected else "",
-            f"[cyan]{profile.id}[/cyan]\n[dim]{profile.label}[/dim]",
-            profile.connector,
-            profile.environment,
-            profile.transport,
-            ", ".join(profile.capabilities),
-        )
-    console.print(table)
-    console.print("[dim]Use `vibe-trading connector use <profile>` to set the default profile.[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_use(profile_id: str) -> int:
     """Select the default trading connector profile."""
-    from src.trading.profiles import profile_by_id, save_selected_profile_id
-
-    try:
-        profile = profile_by_id(profile_id)
-        path = save_selected_profile_id(profile.id)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR
-    console.print(f"[green]Selected trading connector[/green] {profile.id}")
-    console.print(f"[dim]{profile.label} · {profile.environment} · {profile.transport}[/dim]")
-    console.print(f"[dim]Config: {path}[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_configure(
@@ -3330,42 +2699,8 @@ def cmd_connector_configure(
     yes: bool = False,
 ) -> int:
     """Configure a local connector profile."""
-    from src.trading.connectors.ibkr.local import IBKRLocalConfig, config_path, save_config
-
-    try:
-        profile = _selected_profile_or(profile_id)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR
-    if profile.transport != "local_tws" or profile.connector != "ibkr":
-        console.print(f"[red]{profile.id} is not a local TWS/Gateway profile.[/red]")
-        return EXIT_USAGE_ERROR
-
-    path = config_path()
-    if path.exists() and not yes:
-        console.print(f"[yellow]Local connector config already exists:[/yellow] {path}")
-        try:
-            if not Confirm.ask("Overwrite it?", default=False):
-                console.print("[dim]Aborted.[/dim]")
-                return EXIT_SUCCESS
-        except EOFError:
-            console.print("[dim]No input available; use --yes for non-interactive setup.[/dim]")
-            return EXIT_USAGE_ERROR
-
-    cfg = IBKRLocalConfig.from_mapping(
-        {
-            **profile.config,
-            "host": host,
-            "port": port or profile.config.get("port"),
-            "clientId": client_id,
-            "account": account,
-            "readonly": True,
-        }
-    )
-    path = save_config(cfg)
-    console.print(f"[green]Configured[/green] {profile.id} [dim]({path})[/dim]")
-    console.print(f"[dim]Run `vibe-trading connector check {profile.id}` to verify it.[/dim]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_check(
@@ -3377,57 +2712,8 @@ def cmd_connector_check(
     account: str | None = None,
 ) -> int:
     """Check selected or explicit trading connector profile."""
-    from src.trading.service import check_connection
-
-    try:
-        profile = _selected_profile_or(profile_id)
-        report = check_connection(profile.id, host=host, port=port, client_id=client_id, account=account)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector check failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-
-    title = f"Trading Connector: {profile.id}"
-    if profile.transport == "local_tws":
-        table = Table(title=title, box=box.SIMPLE_HEAVY, show_lines=False)
-        table.add_column("Endpoint")
-        table.add_column("Profile")
-        table.add_column("Address")
-        table.add_column("State")
-        for row in report.get("ports", []):
-            open_state = "[green]open[/green]" if row.get("open") else "[dim]closed[/dim]"
-            table.add_row(
-                str(row.get("label")),
-                str(row.get("profile")),
-                f"{row.get('host')}:{row.get('port')}",
-                open_state,
-            )
-        console.print(table)
-        target = report.get("target", {})
-        target_state = "open" if target.get("open") else "closed"
-        console.print(f"Target: [bold]{target.get('host')}:{target.get('port')}[/bold] ({target_state})")
-        sdk = report.get("sdk", {})
-        if not sdk.get("installed"):
-            console.print("[yellow]Missing optional dependency:[/yellow] pip install 'ib_async>=2.0'")
-        if report.get("account"):
-            accounts = ", ".join(report["account"].get("accounts", [])) or "(none)"
-            console.print(f"Accounts: [cyan]{rich_escape(accounts)}[/cyan]")
-    else:
-        table = Table(title=title, box=box.SIMPLE_HEAVY, show_lines=False)
-        table.add_column("Field", style="cyan")
-        table.add_column("Value")
-        table.add_row("Connector", profile.connector)
-        table.add_row("Environment", profile.environment)
-        table.add_row("Transport", profile.transport)
-        table.add_row("Configured", "yes" if report.get("configured") else "[red]no[/red]")
-        table.add_row("OAuth token", "present" if report.get("oauth_token_present") else "[yellow]missing[/yellow]")
-        table.add_row("Capabilities", ", ".join(report.get("capabilities", [])))
-        console.print(table)
-
-    if report.get("status") not in {"ok"}:
-        console.print(f"[red]{rich_escape(str(report.get('error') or report.get('status') or 'not ready'))}[/red]")
-        return EXIT_RUN_FAILED
-    console.print("[green]Connector profile is ready.[/green]")
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def _print_connector_account(result: dict[str, Any]) -> int:
@@ -3462,17 +2748,8 @@ def cmd_connector_account(
     account: str | None = None,
 ) -> int:
     """Print account summary from a connector profile."""
-    from src.trading.service import get_account
-
-    try:
-        result = get_account(_profile_id(profile_id), host=host, port=port, client_id=client_id, account=account)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector account failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-    if result.get("status") == "error":
-        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
-        return EXIT_RUN_FAILED
-    return _print_connector_account(result)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_positions(
@@ -3484,38 +2761,8 @@ def cmd_connector_positions(
     account: str | None = None,
 ) -> int:
     """Print positions from a connector profile."""
-    from src.trading.service import get_positions
-
-    try:
-        result = get_positions(_profile_id(profile_id), host=host, port=port, client_id=client_id, account=account)
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector positions failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-    if result.get("status") == "error":
-        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
-        return EXIT_RUN_FAILED
-    rows = result.get("positions", [])
-    if not rows:
-        console.print("[dim]No positions returned.[/dim]")
-        return EXIT_SUCCESS
-    table = Table(title=f"Positions · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Account")
-    table.add_column("Symbol")
-    table.add_column("Type")
-    table.add_column("Qty", justify="right")
-    table.add_column("Avg Cost", justify="right")
-    table.add_column("Currency")
-    for row in rows:
-        table.add_row(
-            str(row.get("account") or ""),
-            str(row.get("local_symbol") or row.get("symbol") or ""),
-            str(row.get("sec_type") or ""),
-            str(row.get("position") or ""),
-            str(row.get("avg_cost") or ""),
-            str(row.get("currency") or ""),
-        )
-    console.print(table)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_orders(
@@ -3528,50 +2775,8 @@ def cmd_connector_orders(
     include_executions: bool = False,
 ) -> int:
     """Print open orders from a connector profile."""
-    from src.trading.service import get_open_orders
-
-    try:
-        result = get_open_orders(
-            _profile_id(profile_id),
-            host=host,
-            port=port,
-            client_id=client_id,
-            account=account,
-            include_executions=include_executions,
-        )
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector orders failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-    if result.get("status") == "error":
-        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
-        return EXIT_RUN_FAILED
-    orders = result.get("open_orders", [])
-    if not orders:
-        console.print("[dim]No open orders returned.[/dim]")
-        return EXIT_SUCCESS
-    table = Table(title=f"Open Orders · {result.get('profile_id')}", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Account")
-    table.add_column("Symbol")
-    table.add_column("Action")
-    table.add_column("Type")
-    table.add_column("Qty", justify="right")
-    table.add_column("Limit", justify="right")
-    table.add_column("Status")
-    for row in orders:
-        contract = row.get("contract") or {}
-        order = row.get("order") or row
-        order_status = row.get("status") or {}
-        table.add_row(
-            str(order.get("account") or ""),
-            str(contract.get("local_symbol") or contract.get("symbol") or ""),
-            str(order.get("action") or ""),
-            str(order.get("order_type") or ""),
-            str(order.get("total_quantity") or ""),
-            str(order.get("limit_price") or ""),
-            str(order_status.get("status") or ""),
-        )
-    console.print(table)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_quote(
@@ -3587,42 +2792,8 @@ def cmd_connector_quote(
     sec_type: str = "STK",
 ) -> int:
     """Print a quote from a connector profile."""
-    from src.trading.service import get_quote
-
-    try:
-        result = get_quote(
-            symbol,
-            _profile_id(profile_id),
-            host=host,
-            port=port,
-            client_id=client_id,
-            account=account,
-            exchange=exchange,
-            currency=currency,
-            sec_type=sec_type,
-        )
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector quote failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-    if result.get("status") == "error":
-        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
-        return EXIT_RUN_FAILED
-    quote = result.get("quote", {})
-    table = Table(title=f"Quote {result.get('symbol', symbol)} · {result.get('profile_id')}", box=box.SIMPLE_HEAVY)
-    table.add_column("Bid", justify="right")
-    table.add_column("Ask", justify="right")
-    table.add_column("Last", justify="right")
-    table.add_column("Close", justify="right")
-    table.add_column("Volume", justify="right")
-    table.add_row(
-        str(quote.get("bid") or ""),
-        str(quote.get("ask") or ""),
-        str(quote.get("last") or ""),
-        str(quote.get("close") or ""),
-        str(quote.get("volume") or ""),
-    )
-    console.print(table)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_history(
@@ -3644,54 +2815,8 @@ def cmd_connector_history(
     limit: int = 90,
 ) -> int:
     """Print historical bars from a connector profile."""
-    from src.trading.service import get_history
-
-    try:
-        result = get_history(
-            symbol,
-            _profile_id(profile_id),
-            host=host,
-            port=port,
-            client_id=client_id,
-            account=account,
-            exchange=exchange,
-            currency=currency,
-            sec_type=sec_type,
-            duration=duration,
-            bar_size=bar_size,
-            what_to_show=what_to_show,
-            use_rth=use_rth,
-            period=period,
-            limit=limit,
-        )
-    except Exception as exc:  # noqa: BLE001
-        console.print(f"[red]Connector history failed:[/red] {exc}")
-        return EXIT_RUN_FAILED
-    if result.get("status") == "error":
-        console.print(f"[red]{rich_escape(str(result.get('error')))}[/red]")
-        return EXIT_RUN_FAILED
-    rows = result.get("bars", [])
-    if not rows:
-        console.print("[dim]No historical bars returned.[/dim]")
-        return EXIT_SUCCESS
-    table = Table(title=f"History {result.get('symbol', symbol)} · {result.get('profile_id')}", box=box.SIMPLE_HEAVY)
-    table.add_column("Date")
-    table.add_column("Open", justify="right")
-    table.add_column("High", justify="right")
-    table.add_column("Low", justify="right")
-    table.add_column("Close", justify="right")
-    table.add_column("Volume", justify="right")
-    for row in rows[-20:]:
-        table.add_row(
-            str(row.get("date") or ""),
-            str(row.get("open") or ""),
-            str(row.get("high") or ""),
-            str(row.get("low") or ""),
-            str(row.get("close") or ""),
-            str(row.get("volume") or ""),
-        )
-    console.print(table)
-    return EXIT_SUCCESS
+    print('This command has been removed.')
+    return 2
 
 
 def _live_profile_connector(
@@ -3700,84 +2825,49 @@ def _live_profile_connector(
     require_runner: bool = False,
 ) -> tuple[int, Optional[str]]:
     """Resolve a profile to a live-capable connector key."""
-    try:
-        profile = _selected_profile_or(profile_id)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR, None
-    if profile.environment != "live" or profile.transport != "remote_mcp":
-        console.print(f"[red]{profile.id} is not a live remote MCP connector profile.[/red]")
-        return EXIT_USAGE_ERROR, None
-    if require_runner:
-        from src.trading.service import profile_supports_live_runner
-
-        if not profile_supports_live_runner(profile):
-            console.print(f"[red]{profile.id} does not support live runner management.[/red]")
-            return EXIT_USAGE_ERROR, None
-    return EXIT_SUCCESS, profile.connector
+    return 2
 
 
 def cmd_connector_authorize(profile_id: Optional[str]) -> int:
     """Authorize a remote MCP connector profile."""
-    code, broker = _live_profile_connector(profile_id)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_authorize(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_status(profile_id: Optional[str]) -> int:
     """Show connector status."""
-    try:
-        profile = _selected_profile_or(profile_id)
-    except ValueError as exc:
-        console.print(f"[red]{exc}[/red]")
-        return EXIT_USAGE_ERROR
-    if profile.environment == "live" and profile.transport == "remote_mcp":
-        check_code = cmd_connector_check(profile.id)
-        if check_code != EXIT_SUCCESS:
-            return check_code
-        return cmd_live_status(profile.connector)
-    return cmd_connector_check(profile.id)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_start(profile_id: Optional[str]) -> int:
     """Start a live remote MCP connector runner."""
-    code, broker = _live_profile_connector(profile_id, require_runner=True)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_start(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_stop(profile_id: Optional[str]) -> int:
     """Stop a live remote MCP connector runner."""
-    code, broker = _live_profile_connector(profile_id, require_runner=True)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_stop(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_halt(profile_id: Optional[str]) -> int:
     """Trip the halt switch for a live remote MCP connector profile."""
-    code, broker = _live_profile_connector(profile_id, require_runner=True)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_halt(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_resume(profile_id: Optional[str]) -> int:
     """Clear the halt switch for a live remote MCP connector profile."""
-    code, broker = _live_profile_connector(profile_id, require_runner=True)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_resume(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def cmd_connector_revoke(profile_id: Optional[str]) -> int:
     """Revoke a live remote MCP connector profile."""
-    code, broker = _live_profile_connector(profile_id)
-    if code != EXIT_SUCCESS or broker is None:
-        return code
-    return cmd_live_revoke(broker)
+    print('This command has been removed.')
+    return 2
 
 
 def _dispatch_connector(args: argparse.Namespace) -> int:
@@ -3883,180 +2973,7 @@ def _dispatch_connector(args: argparse.Namespace) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser with subcommands and compatibility flags."""
-    parser = argparse.ArgumentParser(description="Vibe-Trading CLI")
-    parser.add_argument("--version", action="version", version=f"vibe-trading {_VERSION}")
-    parser.add_argument("-p", "--prompt", type=str, help="Prompt text")
-    parser.add_argument("-f", "--prompt-file", type=Path, help="Read prompt text from a file")
-    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
-    parser.add_argument("--no-rich", action="store_true", help="Disable Rich formatting")
-    parser.add_argument("--chat", action="store_true", help="Interactive chat mode")
-    parser.add_argument("--continue", dest="cont", nargs=2, metavar=("RUN_ID", "PROMPT"), help="Continue a run")
-    parser.add_argument("--list", action="store_true", help="List runs")
-    parser.add_argument("--show", metavar="RUN_ID", help="Show run details")
-    parser.add_argument("--code", metavar="RUN_ID", help="Show generated code")
-    parser.add_argument("--pine", metavar="RUN_ID", help="Show Pine Script for TradingView")
-    parser.add_argument("--trace", metavar="RUN_ID", help="Replay a run trace")
-    parser.add_argument("--skills", action="store_true", help="List skills")
-    parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
-
-    parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
-    parser.add_argument("--swarm-inspect", metavar="PRESET", help="Inspect a swarm preset without running it")
-    parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
-    parser.add_argument("--swarm-list", action="store_true", help="List swarm runs")
-    parser.add_argument("--swarm-show", metavar="RUN_ID", help="Show a swarm run")
-    parser.add_argument("--swarm-cancel", metavar="RUN_ID", help="Cancel a swarm run")
-
-    parser.add_argument("--sessions", action="store_true", help="List sessions")
-    parser.add_argument("--session-chat", metavar="SESSION_ID", help="Continue a session chat")
-    parser.add_argument("--upload", metavar="FILE_PATH", help="Upload a file")
-
-    subparsers = parser.add_subparsers(dest="command")
-
-    run_parser = subparsers.add_parser("run", help="Run a prompt")
-    run_parser.add_argument("-p", "--prompt", dest="run_prompt", type=str, help="Prompt text")
-    run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
-    run_parser.add_argument("--json", dest="run_json", action="store_true", help="Print machine-readable JSON output")
-    run_parser.add_argument("--no-rich", dest="run_no_rich", action="store_true", help="Disable Rich formatting")
-    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=50, help="Maximum agent iterations")
-
-    serve_parser = subparsers.add_parser("serve", help="Start the API server")
-    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
-    serve_parser.add_argument("--port", type=int, default=8000, help="Listen port")
-    serve_parser.add_argument("--dev", action="store_true", help="Start the Vite dev server")
-
-    provider_parser = subparsers.add_parser("provider", help="Manage OAuth providers")
-    provider_subparsers = provider_parser.add_subparsers(dest="provider_command")
-    login_parser = provider_subparsers.add_parser("login", help="Authenticate with an OAuth provider")
-    login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
-
-    list_parser = subparsers.add_parser("list", help="List runs")
-    list_parser.add_argument("--limit", dest="list_limit", type=int, default=20, help="Maximum number of runs")
-
-    show_parser = subparsers.add_parser("show", help="Show run details")
-    show_parser.add_argument("run_id", help="Run identifier")
-
-    chat_parser = subparsers.add_parser("chat", help="Interactive chat mode")
-    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
-
-    subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
-
-    memory_parser = subparsers.add_parser("memory", help="Inspect persistent memory")
-    memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
-
-    memory_list_parser = memory_subparsers.add_parser("list", help="List memory entries")
-    memory_list_parser.add_argument(
-        "--type",
-        dest="memory_type",
-        choices=MEMORY_TYPES,
-        help="Filter by memory type",
-    )
-
-    memory_show_parser = memory_subparsers.add_parser("show", help="Show a memory entry")
-    memory_show_parser.add_argument("name", help="Memory title or filename stem")
-
-    memory_search_parser = memory_subparsers.add_parser("search", help="Recall memories for a query")
-    memory_search_parser.add_argument("query", help="Search text")
-    memory_search_parser.add_argument(
-        "--limit", dest="memory_limit", type=int, default=5, help="Maximum matches (default: 5)"
-    )
-
-    memory_forget_parser = memory_subparsers.add_parser("forget", help="Remove a memory entry")
-    memory_forget_parser.add_argument("name", help="Memory title or filename stem")
-    memory_forget_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
-
-    connector_parser = subparsers.add_parser("connector", help="Manage trading connector profiles")
-    connector_subparsers = connector_parser.add_subparsers(dest="connector_command")
-
-    connector_subparsers.add_parser("list", help="List selectable connector profiles")
-
-    connector_use = connector_subparsers.add_parser("use", help="Select the default connector profile")
-    connector_use.add_argument("profile", help="Profile id, e.g. ibkr-paper-local")
-
-    def _add_connector_profile_arg(p: argparse.ArgumentParser, *, required: bool = False) -> None:
-        if required:
-            p.add_argument("profile", help="Connector profile id")
-        else:
-            p.add_argument("profile", nargs="?", default=None, help="Connector profile id (default: selected)")
-
-    def _add_connector_local(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--host", default=None)
-        p.add_argument("--port", type=int, default=None)
-        p.add_argument("--client-id", dest="client_id", type=int, default=None)
-        p.add_argument("--account", default=None, help="Optional account code")
-
-    def _add_connector_contract(p: argparse.ArgumentParser) -> None:
-        p.add_argument("--exchange", default="SMART")
-        p.add_argument("--currency", default="USD")
-        p.add_argument("--sec-type", dest="sec_type", default="STK")
-
-    connector_configure = connector_subparsers.add_parser("configure", help="Configure a local connector profile")
-    _add_connector_profile_arg(connector_configure, required=True)
-    connector_configure.add_argument("--host", default="127.0.0.1")
-    connector_configure.add_argument("--port", type=int, default=None)
-    connector_configure.add_argument("--client-id", dest="client_id", type=int, default=77)
-    connector_configure.add_argument("--account", default=None)
-    connector_configure.add_argument("-y", "--yes", action="store_true", help="Overwrite without prompting")
-
-    connector_check = connector_subparsers.add_parser("check", help="Check selected connector readiness")
-    _add_connector_profile_arg(connector_check)
-    _add_connector_local(connector_check)
-
-    connector_status = connector_subparsers.add_parser("status", help="Show selected connector status")
-    _add_connector_profile_arg(connector_status)
-
-    connector_authorize = connector_subparsers.add_parser("authorize", help="Authorize a remote MCP connector profile")
-    _add_connector_profile_arg(connector_authorize)
-
-    connector_account = connector_subparsers.add_parser("account", help="Read account summary")
-    _add_connector_profile_arg(connector_account)
-    _add_connector_local(connector_account)
-
-    connector_positions = connector_subparsers.add_parser("positions", help="Read current positions")
-    _add_connector_profile_arg(connector_positions)
-    _add_connector_local(connector_positions)
-
-    connector_orders = connector_subparsers.add_parser("orders", help="Read open orders")
-    _add_connector_profile_arg(connector_orders)
-    _add_connector_local(connector_orders)
-    connector_orders.add_argument("--include-executions", action="store_true")
-
-    connector_quote = connector_subparsers.add_parser("quote", help="Read a quote snapshot")
-    connector_quote.add_argument("symbol")
-    _add_connector_profile_arg(connector_quote)
-    _add_connector_local(connector_quote)
-    _add_connector_contract(connector_quote)
-
-    connector_history = connector_subparsers.add_parser("history", help="Read historical bars")
-    connector_history.add_argument("symbol")
-    _add_connector_profile_arg(connector_history)
-    _add_connector_local(connector_history)
-    _add_connector_contract(connector_history)
-    connector_history.add_argument("--duration", default="30 D", help="IBKR (local_tws) duration string")
-    connector_history.add_argument("--bar-size", dest="bar_size", default="1 day", help="IBKR (local_tws) bar size")
-    connector_history.add_argument("--what-to-show", dest="what_to_show", default="TRADES")
-    connector_history.add_argument("--no-rth", action="store_true", help="Include outside-regular-hours data when available")
-    connector_history.add_argument("--period", default="1d", help="Bar interval for SDK connectors: 1m/5m/15m/30m/1h/4h/1d/1w/1M")
-    connector_history.add_argument("--limit", dest="bar_limit", type=int, default=90, help="Number of bars for SDK connectors")
-
-    for name, help_text in (
-        ("start", "Start the selected live connector runner"),
-        ("stop", "Stop the selected live connector runner"),
-        ("halt", "Trip the selected live connector kill switch"),
-        ("resume", "Clear the selected live connector kill switch"),
-        ("revoke", "Revoke the selected live connector OAuth token and mandate"),
-    ):
-        p = connector_subparsers.add_parser(name, help=help_text)
-        _add_connector_profile_arg(p)
-
-    # Alpha Zoo subcommands (registered via cli_handlers.add_subparser)
-    from src.factors.cli_handlers import add_subparser as _add_alpha_subparser
-    _add_alpha_subparser(subparsers)
-
-    # Hypothesis Registry subcommands
-    from src.hypotheses.cli_handlers import add_subparser as _add_hypothesis_subparser
-    _add_hypothesis_subparser(subparsers)
-
-    return parser
+    return None
 
 
 def _handle_prompt_command(
@@ -4258,7 +3175,6 @@ def _render_env_content(config: dict[str, str]) -> str:
         "ZAI_BASE_URL",
         "OLLAMA_BASE_URL",
         "LANGCHAIN_MODEL_NAME",
-        "TUSHARE_TOKEN",
         "TIMEOUT_SECONDS",
         "MAX_RETRIES",
     ]
@@ -4483,14 +3399,6 @@ def cmd_init() -> int:
         show_default=True,
     ).strip()
 
-    tushare_token = Prompt.ask(
-        "(Optional) Enter Tushare token for China A-share data",
-        default="",
-        show_default=False,
-    ).strip()
-    if tushare_token:
-        env_values["TUSHARE_TOKEN"] = tushare_token
-
     _INIT_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     _INIT_ENV_PATH.write_text(_render_env_content(env_values), encoding="utf-8")
     try:
@@ -4511,111 +3419,7 @@ def cmd_init() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint returning a process exit code."""
-    raw_argv = list(sys.argv[1:] if argv is None else argv)
-    parser = _build_parser()
-    try:
-        args = parser.parse_args(raw_argv)
-    except SystemExit as exc:
-        return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
-    if not sys.stdout.isatty():
-        args.no_rich = True
-        if hasattr(args, "run_no_rich"):
-            args.run_no_rich = True
-
-    if args.command == "init":
-        return cmd_init()
-    if args.command == "serve":
-        return serve_main(raw_argv[1:])
-    if args.command == "provider":
-        if args.provider_command == "login":
-            return cmd_provider_login(args.provider)
-        console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider login openai-codex")
-        return EXIT_USAGE_ERROR
-    if args.command == "run":
-        return _handle_prompt_command(
-            args.run_prompt,
-            args.run_prompt_file,
-            max_iter=args.run_max_iter,
-            json_mode=args.run_json,
-            no_rich=args.run_no_rich,
-        )
-    if args.command == "list":
-        return _coerce_exit_code(cmd_list(args.list_limit))
-    if args.command == "show":
-        return _coerce_exit_code(cmd_show(args.show))
-    if args.command == "chat":
-        return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
-    if args.command == "alpha":
-        from src.factors.cli_handlers import dispatch as _alpha_dispatch
-        return _coerce_exit_code(_alpha_dispatch(args))
-    if args.command == "hypothesis":
-        from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
-        return _coerce_exit_code(_hyp_dispatch(args))
-    if args.command == "connector":
-        return _coerce_exit_code(_dispatch_connector(args))
-    if args.command == "memory":
-        if args.memory_command == "list":
-            return _coerce_exit_code(cmd_memory_list(args.memory_type))
-        if args.memory_command == "show":
-            return _coerce_exit_code(cmd_memory_show(args.name))
-        if args.memory_command == "search":
-            return _coerce_exit_code(cmd_memory_search(args.query, args.memory_limit))
-        if args.memory_command == "forget":
-            return _coerce_exit_code(cmd_memory_forget(args.name, yes=args.yes))
-        console.print("[red]memory requires a subcommand.[/red] Try: vibe-trading memory list")
-        return EXIT_USAGE_ERROR
-
-    if args.list:
-        return _coerce_exit_code(cmd_list())
-    if args.show:
-        return _coerce_exit_code(cmd_show(args.show))
-    if args.code:
-        return _coerce_exit_code(cmd_code(args.code))
-    if args.pine:
-        return _coerce_exit_code(cmd_pine(args.pine))
-    if args.trace:
-        return _coerce_exit_code(cmd_trace(args.trace))
-    if args.skills:
-        return _coerce_exit_code(cmd_skills())
-
-    if args.swarm_presets:
-        return _coerce_exit_code(cmd_swarm_presets())
-    if args.swarm_inspect:
-        return _coerce_exit_code(cmd_swarm_inspect(args.swarm_inspect))
-    if args.swarm_run:
-        preset_name = args.swarm_run[0]
-        vars_json = args.swarm_run[1] if len(args.swarm_run) > 1 else None
-        return _coerce_exit_code(cmd_swarm_run_live(preset_name, vars_json))
-    if args.swarm_list:
-        return _coerce_exit_code(cmd_swarm_list())
-    if args.swarm_show:
-        return _coerce_exit_code(cmd_swarm_show(args.swarm_show))
-    if args.swarm_cancel:
-        return _coerce_exit_code(cmd_swarm_cancel(args.swarm_cancel))
-
-    if args.sessions:
-        return _coerce_exit_code(cmd_sessions())
-    if args.session_chat:
-        return _coerce_exit_code(cmd_session_chat(args.session_chat, args.max_iter))
-    if args.upload:
-        return _coerce_exit_code(cmd_upload(args.upload))
-    if args.chat:
-        return _coerce_exit_code(cmd_interactive(args.max_iter))
-    if args.cont:
-        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
-
-    # No flags and no subcommand: check for a prompt, otherwise enter interactive mode.
-    if args.prompt or args.prompt_file or not sys.stdin.isatty():
-        return _handle_prompt_command(
-            args.prompt,
-            args.prompt_file,
-            max_iter=args.max_iter,
-            json_mode=args.json,
-            no_rich=args.no_rich,
-        )
-
-    # Default: interactive mode
-    return _coerce_exit_code(cmd_interactive(args.max_iter))
+    return 2
 
 
 if __name__ == "__main__":

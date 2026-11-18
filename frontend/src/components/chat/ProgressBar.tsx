@@ -19,8 +19,7 @@ interface ProgressBarProps {
 /**
  * Thin horizontal progress bar primitive.
  *
- * Visual pattern mirrors AlphaZoo's progress bar
- * (`frontend/src/pages/AlphaZoo.tsx:854-859`):
+ * Compact progress bar used by long-running chat actions.
  *   `bg-muted rounded-full overflow-hidden` track + `bg-primary
  *   transition-all duration-300` fill.
  *

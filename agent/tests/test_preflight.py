@@ -2,27 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-
 from src import preflight
 
 
-def test_akshare_check_uses_spec_without_import(monkeypatch) -> None:
-    """AKShare's package import is heavy; preflight should only check discovery."""
-    monkeypatch.delitem(sys.modules, "akshare", raising=False)
-    monkeypatch.setattr(preflight, "find_spec", lambda name: object() if name == "akshare" else None)
-
-    result = preflight._check_akshare()
-
-    assert result.status == "ready"
-    assert result.message == "installed"
-    assert "akshare" not in sys.modules
-
-
-def test_akshare_check_skips_when_missing(monkeypatch) -> None:
-    monkeypatch.setattr(preflight, "find_spec", lambda name: None)
-
-    result = preflight._check_akshare()
-
-    assert result.status == "skipped"
-    assert result.message == "package not installed"
+def test_preflight_does_not_probe_market_data_sources() -> None:
+    """Startup must not import or call market-data libraries."""
+    for name in ("_check_akshare", "_check_tushare", "_check_yfinance", "_check_okx", "_check_ccxt"):
+        assert not hasattr(preflight, name)

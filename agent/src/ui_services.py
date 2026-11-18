@@ -422,27 +422,8 @@ def reconstruct_price_series(run_dir: Path) -> List[Dict[str, Any]]:
         pass
     fetch_start_date = _compute_fetch_start_date(run_dir, start_date)
 
-    try:
-        source = context.get("source", "tushare")
-        if source == "ccxt":
-            from backtest.loaders.ccxt_loader import DataLoader
-        elif source == "okx":
-            from backtest.loaders.okx import DataLoader
-        elif source == "yfinance":
-            from backtest.loaders.yfinance_loader import DataLoader
-        else:
-            from backtest.loaders.tushare import DataLoader
-        loader = DataLoader()
-        data_map = loader.fetch(codes, fetch_start_date, end_date)
-    except Exception as exc:
-        print(f"[WARN] reconstruct_price_series: DataLoader failed ({exc})")
-        return []
-
-    if not data_map:
-        print(f"[WARN] reconstruct_price_series: DataLoader returned empty")
-        return []
-
-    return _flatten_data_map(data_map, start_date=start_date)
+    del codes, start_date, end_date, fetch_start_date
+    return []
 
 
 def build_run_analysis(run_dir: Path) -> Dict[str, Any]:

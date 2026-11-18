@@ -5,10 +5,14 @@ ChatLLM is designed specifically for the AgentLoop ReAct cycle.
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from src.providers.llm import build_llm
+
+logger = logging.getLogger(__name__)
 
 
 def _dedupe_finish_reason(raw: str) -> str:
@@ -101,10 +105,21 @@ class ChatLLM:
         Returns:
             LLMResponse.
         """
+        logger.info(
+            "chat invoke start model=%s messages=%d tools=%d timeout=%s",
+            self.model_name or "-", len(messages), 0 if not tools else len(tools), timeout,
+        )
+        started = time.perf_counter()
         llm = self._llm.bind_tools(tools) if tools else self._llm
         config = {"timeout": timeout} if timeout else {}
         ai_message = llm.invoke(messages, config=config)
-        return self._parse_response(ai_message)
+        parsed = self._parse_response(ai_message)
+        logger.info(
+            "chat invoke done model=%s elapsed=%.2fs finish=%s tool_calls=%d",
+            self.model_name or "-", time.perf_counter() - started,
+            parsed.finish_reason, len(parsed.tool_calls),
+        )
+        return parsed
 
     def stream_chat(
         self,
@@ -127,18 +142,44 @@ class ChatLLM:
         Returns:
             Parsed ``LLMResponse``.
         """
+        logger.info(
+            "stream_chat start model=%s messages=%d tools=%d timeout=%s",
+            self.model_name or "-", len(messages), 0 if not tools else len(tools), timeout,
+        )
+        started = time.perf_counter()
         try:
             llm = self._llm.bind_tools(tools) if tools else self._llm
             config = {"timeout": timeout} if timeout else {}
             accumulated = None
+            chunks = 0
             for chunk in llm.stream(messages, config=config):
+                chunks += 1
+                if chunks == 1:
+                    logger.info(
+                        "stream_chat first chunk model=%s elapsed=%.2fs",
+                        self.model_name or "-", time.perf_counter() - started,
+                    )
                 if chunk.content and on_text_chunk:
                     on_text_chunk(chunk.content)
                 accumulated = chunk if accumulated is None else accumulated + chunk
             if accumulated is None:
+                logger.info(
+                    "stream_chat empty model=%s elapsed=%.2fs chunks=%d",
+                    self.model_name or "-", time.perf_counter() - started, chunks,
+                )
                 return LLMResponse(content="", tool_calls=[], finish_reason="stop")
-            return self._parse_response(accumulated)
+            parsed = self._parse_response(accumulated)
+            logger.info(
+                "stream_chat done model=%s elapsed=%.2fs chunks=%d finish=%s tool_calls=%d",
+                self.model_name or "-", time.perf_counter() - started, chunks,
+                parsed.finish_reason, len(parsed.tool_calls),
+            )
+            return parsed
         except Exception:
+            logger.exception(
+                "stream_chat failed model=%s elapsed=%.2fs; falling back to invoke",
+                self.model_name or "-", time.perf_counter() - started,
+            )
             return self.chat(messages, tools=tools, timeout=timeout)
 
     @staticmethod

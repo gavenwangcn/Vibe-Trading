@@ -31,8 +31,9 @@ from rich.console import Console
 
 from src.agent.trace import TraceWriter
 from src.goal.context import default_goal_criteria
-from src.swarm.presets import PRESETS_DIR
 from src.shanghai_time import format_epoch_shanghai, now_shanghai_iso
+
+PRESETS_DIR = Path(__file__).resolve().parent / "_removed_swarm_presets"
 from src.ui_services import build_run_analysis, load_run_context
 
 from mcp_settings_api import router as mcp_settings_router
@@ -82,7 +83,6 @@ class BacktestMetrics(BaseModel):
     sharpe: float = Field(..., description="Sharpe ratio")
     win_rate: float = Field(..., description="Win rate")
     trade_count: int = Field(..., description="Number of trades")
-
 
 
 class RAGSelection(BaseModel):
@@ -478,7 +478,6 @@ class LiveStatusResponse(BaseModel):
 
     global_halted: bool = Field(..., description="Whether the GLOBAL kill switch is tripped")
     brokers: List[LiveBrokerStatus]
-
 
 
 # ============================================================================
@@ -961,37 +960,28 @@ def _build_llm_settings_response(values: Optional[Dict[str, str]] = None) -> LLM
 
 
 def _baostock_supported() -> bool:
-    """Check whether the project has a BaoStock loader implementation."""
-    loader_dir = AGENT_DIR / "backtest" / "loaders"
-    return any((loader_dir / name).exists() for name in ("baostock.py", "baostock_loader.py"))
+    """Market-data loaders are not part of this agent."""
+    return False
 
 
 def _baostock_installed() -> bool:
-    """Check whether the optional BaoStock package is importable."""
-    import importlib.util
-
-    return importlib.util.find_spec("baostock") is not None
+    """Market-data packages are not used by this agent."""
+    return False
 
 
 def _build_data_source_settings_response(values: Optional[Dict[str, str]] = None) -> DataSourceSettingsResponse:
-    """Build the public data source settings payload."""
-    env_values = values if values is not None else _read_settings_env_values()
-    token = env_values.get("TUSHARE_TOKEN", "")
-    token_configured = _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS)
-    supported = _baostock_supported()
-    installed = _baostock_installed()
-    if supported:
-        baostock_message = "BaoStock loader is available."
-    elif installed:
-        baostock_message = "BaoStock package is installed, but this project has no BaoStock loader."
-    else:
-        baostock_message = "No BaoStock loader is registered in this project."
+    """Build the public data source settings payload.
+
+    Market-data credentials are not accepted. The response stays so older
+    clients can read a stable shape.
+    """
+    del values
     return DataSourceSettingsResponse(
-        tushare_token_configured=token_configured,
+        tushare_token_configured=False,
         tushare_token_hint=None,
-        baostock_supported=supported,
-        baostock_installed=installed,
-        baostock_message=baostock_message,
+        baostock_supported=False,
+        baostock_installed=False,
+        baostock_message="Market data sources are not part of this agent.",
         env_path=_project_relative_path(ENV_PATH),
     )
 
@@ -1046,7 +1036,6 @@ def _load_csv_to_dict(path: Path, limit: Optional[int] = None) -> List[Dict[str,
         return rows
     except Exception:
         return []
-
 
 
 def _build_response_from_run_dir(run_dir: Path, elapsed: float, *, include_analysis: bool = False) -> RunResponse:
@@ -1479,26 +1468,13 @@ async def get_data_source_settings():
     dependencies=[Depends(require_local_or_auth)],
 )
 async def update_data_source_settings(payload: UpdateDataSourceSettingsRequest):
-    """Persist project-local data source credentials and update the running process."""
+    """Ignore market-data credentials and clear any stored Tushare token."""
+    del payload
     current_values = _read_settings_env_values()
-    updates: Dict[str, str] = {}
-
-    if payload.clear_tushare_token:
-        updates["TUSHARE_TOKEN"] = ""
-    elif payload.tushare_token is not None and payload.tushare_token.strip():
-        updates["TUSHARE_TOKEN"] = payload.tushare_token.strip()
-    elif "TUSHARE_TOKEN" in current_values:
-        updates["TUSHARE_TOKEN"] = current_values["TUSHARE_TOKEN"]
-
-    if updates:
-        _write_env_values(ENV_PATH, updates)
-        token = updates.get("TUSHARE_TOKEN", "").strip()
-        if _is_configured_secret(token, TUSHARE_TOKEN_PLACEHOLDERS):
-            os.environ["TUSHARE_TOKEN"] = token
-        else:
-            os.environ.pop("TUSHARE_TOKEN", None)
-
-    return _build_data_source_settings_response(_read_env_values(ENV_PATH))
+    if "TUSHARE_TOKEN" in current_values:
+        _write_env_values(ENV_PATH, {"TUSHARE_TOKEN": ""})
+        os.environ.pop("TUSHARE_TOKEN", None)
+    return _build_data_source_settings_response()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -1522,7 +1498,7 @@ async def get_correlation_matrix(
     Fetches price data for each code via available data loaders,
     computes pairwise correlation of daily returns over the lookback window.
     """
-    from backtest.correlation import compute_correlation_matrix
+    raise HTTPException(status_code=410, detail="market data correlation has been removed")
 
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) < 2:
@@ -2256,27 +2232,14 @@ _swarm_runtime = None
 
 
 def _get_swarm_runtime():
-    """Lazy-init SwarmRuntime singleton."""
-    global _swarm_runtime
-    if _swarm_runtime is not None:
-        return _swarm_runtime
-    from src.config import load_swarm_agent_config
-    from src.swarm.store import SwarmStore
-    from src.swarm.runtime import SwarmRuntime
-    swarm_dir = Path(__file__).resolve().parent / ".swarm" / "runs"
-    store = SwarmStore(base_dir=swarm_dir)
-    # Boot-time / operator-trusted: REST API callers cannot influence the
-    # config path. See docs/2026-05-25_swarm_mcp_tools_roadmap.md.
-    agent_config = load_swarm_agent_config()
-    _swarm_runtime = SwarmRuntime(store=store, agent_config=agent_config)
-    return _swarm_runtime
+    """Swarm workflows are removed."""
+    return None
 
 
 @app.get("/swarm/presets")
 async def list_swarm_presets():
-    """List Swarm YAML presets."""
-    from src.swarm.presets import list_presets
-    return list_presets()
+    """Swarm presets are no longer shipped."""
+    return []
 
 
 @app.get("/swarm/zh-docs", response_model=List[SwarmZhDocInfo])
@@ -2431,31 +2394,7 @@ async def retry_swarm_run(run_id: str, http_request: Request):
 
     Creates a new run with the same preset and user_vars as the original.
     """
-    _validate_path_param(run_id, "run_id")
-    runtime = _get_swarm_runtime()
-    loaded = runtime._store.load_run(run_id)
-    if not loaded:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-
-    # Reconcile first so a stale "running" run whose host died gets demoted
-    # before we gate on status; only a genuinely active run blocks retry.
-    from src.swarm.models import RunStatus
-
-    reconciled = runtime._store.reconcile_run(loaded, write=True)
-    if reconciled.status == RunStatus.running:
-        raise HTTPException(status_code=409, detail="Cannot retry a running run. Cancel it first.")
-
-    try:
-        new_run = runtime.start_run(
-            reconciled.preset_name,
-            reconciled.user_vars or {},
-            include_shell_tools=_shell_tools_enabled_for_request(http_request),
-        )
-        return {"id": new_run.id, "status": new_run.status.value, "preset_name": new_run.preset_name}
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 # ============================================================================
@@ -2527,18 +2466,6 @@ def _load_full_proposal(proposal_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         The full proposal dict, or ``None`` when not found / unreadable.
     """
-    try:
-        from src.live.paths import live_root
-
-        for proposal_path in live_root().glob(f"*/proposals/{proposal_id}.json"):
-            try:
-                data = json.loads(proposal_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(data, dict) and data.get("type") == "mandate.proposal":
-                return data
-    except Exception:  # pragma: no cover - relay must never break the stream
-        logger.debug("mandate.proposal reload failed for %s", proposal_id, exc_info=True)
     return None
 
 
@@ -2592,23 +2519,6 @@ def _load_live_action_record(audit_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         The full redacted live-action record, or ``None`` when not found.
     """
-    try:
-        from src.live.paths import live_root
-
-        ledger = live_root() / "audit.jsonl"
-        if not ledger.exists():
-            return None
-        for line in reversed(ledger.read_text(encoding="utf-8").splitlines()):
-            if audit_id not in line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(record, dict) and record.get("audit_id") == audit_id:
-                return record
-    except Exception:  # pragma: no cover - relay must never break the stream
-        logger.debug("live.action reload failed for %s", audit_id, exc_info=True)
     return None
 
 
@@ -2652,56 +2562,6 @@ def _live_action_frame_from_tool_result(event: Any) -> Optional[str]:
     return frame.to_sse()
 
 
-def _fetch_broker_ceilings(broker: str) -> Optional[Dict[str, Any]]:
-    """Best-effort fetch of broker-side account ceilings for the commit re-check.
-
-    Reads the broker's ``get_account`` tool and derives an authoritative ceiling
-    snapshot (buying power / funding) so the commit-time fit check binds to the
-    venue's real limits rather than an agent-proposed number. Returns ``None`` on
-    any failure (channel not configured, tool error, fields not recognized) so
-    the caller falls back to the proposal's own snapshot — a commit is never
-    blocked on a broker read. The exact Robinhood field names are finalized
-    post-access (L6); we probe the common ones.
-
-    Args:
-        broker: The live-broker key.
-
-    Returns:
-        A ceilings dict (canonical keys) or ``None`` to fall back.
-    """
-    try:
-        adapter = _live_broker_adapter(broker)
-    except LiveRunnerUnavailable:
-        return None
-    try:
-        result = adapter.call_tool("get_account", {})
-    except Exception:  # pragma: no cover - status/commit must never raise here
-        logger.debug("broker ceiling fetch failed for %s", broker, exc_info=True)
-        return None
-    if not isinstance(result, dict) or result.get("status") == "error":
-        return None
-    payload = result.get("result") if isinstance(result.get("result"), dict) else result
-    funding: Optional[float] = None
-    for key in ("account_funding_usd", "buying_power", "cash", "portfolio_value", "equity"):
-        raw = payload.get(key) if isinstance(payload, dict) else None
-        try:
-            if raw is not None:
-                funding = float(raw)
-                break
-        except (TypeError, ValueError):
-            continue
-    if funding is None or funding <= 0:
-        return None
-    # A single order can never exceed available funding; total exposure is capped
-    # at funding for a cash account. Leverage stays at 1.0 unless the broker
-    # reports margin (L6). These canonical keys are normalized by commit_mandate.
-    return {
-        "account_funding_usd": funding,
-        "max_order_notional_usd": funding,
-        "max_total_exposure_usd": funding,
-    }
-
-
 @app.post("/mandate/commit", dependencies=[Depends(require_auth)])
 async def commit_mandate_endpoint(payload: CommitMandateRequest):
     """Commit a user-selected mandate profile — the only mandate write path.
@@ -2712,42 +2572,7 @@ async def commit_mandate_endpoint(payload: CommitMandateRequest):
     ``mandate.committed`` + ``live.action`` event so all surfaces reflect the
     newly active mandate.
     """
-    if payload.consent_ack is not True:
-        raise HTTPException(status_code=400, detail="consent_ack must be true to commit a mandate")
-
-    from src.live.mandate.commit import CommitError, commit_mandate
-
-    # Prefer broker-DERIVED ceilings over the agent-supplied proposal snapshot:
-    # the commit re-check should bind to the venue's real account limits, not a
-    # number the model proposed. Best-effort — falls back to the proposal's own
-    # ceilings (commit_mandate handles ceilings_ref=None) when the broker channel
-    # is unavailable or the read fails (we never block a commit on a broker read).
-    broker_ceilings = _fetch_broker_ceilings(payload.broker)
-
-    try:
-        result = commit_mandate(
-            proposal_id=payload.proposal_id,
-            ordinal=payload.selected_ordinal,
-            adjustments=payload.adjustments,
-            consent_ack=payload.consent_ack,
-            broker=payload.broker,
-            account_ref=payload.account_ref,
-            session_id=payload.session_id,
-            ceilings_ref=broker_ceilings,
-            lifetime_days=payload.lifetime_days,
-        )
-    except CommitError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    _emit_live_event(payload.session_id, "mandate.committed", result)
-    _emit_live_event(
-        payload.session_id,
-        "live.action",
-        {"kind": "mandate_committed", "broker": result["broker"], "mandate_id": result["mandate_id"]},
-    )
-    return result
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 @app.post("/live/halt", dependencies=[Depends(require_auth)])
@@ -2758,21 +2583,7 @@ async def halt_live_endpoint(payload: LiveHaltRequest):
     enforcement gate then rejects every order attempt until resumed. Emits a
     ``live.halted`` event so all surfaces reflect the halted state.
     """
-    from src.live.halt import trip_halt
-
-    try:
-        path = trip_halt(by="frontend", reason=payload.reason, broker=payload.broker)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    result = {"halted": True, "broker": payload.broker, "reason": payload.reason, "sentinel": str(path)}
-    _emit_live_event(payload.session_id, "live.halted", result)
-    _emit_live_event(
-        payload.session_id,
-        "live.action",
-        {"kind": "halt_tripped", "broker": payload.broker, "reason": payload.reason},
-    )
-    return result
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 @app.post("/live/resume", dependencies=[Depends(require_auth)])
@@ -2782,21 +2593,7 @@ async def resume_live_endpoint(payload: LiveHaltRequest):
     Deletes the HALT sentinel via :func:`src.live.halt.clear_halt` (an explicit
     re-enable; never an agent tool). Emits a ``live.resumed`` event.
     """
-    from src.live.halt import clear_halt
-
-    try:
-        cleared = clear_halt(broker=payload.broker)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    result = {"halted": False, "broker": payload.broker, "cleared": cleared}
-    _emit_live_event(payload.session_id, "live.resumed", result)
-    _emit_live_event(
-        payload.session_id,
-        "live.action",
-        {"kind": "halt_cleared", "broker": payload.broker, "cleared": cleared},
-    )
-    return result
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 # ============================================================================
@@ -2812,10 +2609,8 @@ async def resume_live_endpoint(payload: LiveHaltRequest):
 
 
 def _known_live_brokers() -> List[str]:
-    """Return the recognized live-broker keys (SPEC §7.2)."""
-    from src.config.schema import LIVE_BROKER_SERVER_KEYS
-
-    return sorted(LIVE_BROKER_SERVER_KEYS)
+    """Broker channels are not part of this agent."""
+    return []
 
 
 def _oauth_token_present(broker: str) -> bool:
@@ -2825,14 +2620,7 @@ def _oauth_token_present(broker: str) -> bool:
     is created only when the user OAuth-authorizes the channel. A missing or
     empty directory means the channel is dormant (read-only, no live path).
     """
-    try:
-        from src.live.paths import broker_dir
-
-        oauth_dir = broker_dir(broker) / "oauth"
-        return oauth_dir.is_dir() and any(oauth_dir.iterdir())
-    except Exception:  # pragma: no cover - status must never raise
-        logger.debug("oauth presence check failed for %s", broker, exc_info=True)
-        return False
+    return False
 
 
 def _active_mandate_state(broker: str) -> Optional[ActiveMandateState]:
@@ -2842,45 +2630,7 @@ def _active_mandate_state(broker: str) -> Optional[ActiveMandateState]:
     ``expires_at`` countdown (SPEC §9 dec. 2). A mandate whose ``expires_at`` has
     passed is still surfaced, flagged ``expired`` so the UI can prompt re-consent.
     """
-    from src.live.mandate.store import load_mandate
-
-    mandate = load_mandate(broker)
-    if mandate is None:
-        return None
-
-    consent = mandate.consent
-    caps = mandate.hard_caps
-    expires_in: Optional[int] = None
-    expired = False
-    try:
-        expires_dt = datetime.fromisoformat(consent.expires_at.replace("Z", "+00:00"))
-        from datetime import timezone
-
-        now = datetime.now(timezone.utc)
-        if expires_dt.tzinfo is None:
-            expires_dt = expires_dt.replace(tzinfo=timezone.utc)
-        delta = expires_dt - now
-        expires_in = int(delta.total_seconds())
-        expired = expires_in <= 0
-    except (ValueError, AttributeError):
-        logger.debug("could not parse expires_at for %s mandate", broker, exc_info=True)
-
-    return ActiveMandateState(
-        broker=broker,
-        account_ref=consent.account_ref,
-        created_at=consent.created_at,
-        expires_at=consent.expires_at,
-        expires_in_seconds=expires_in,
-        expired=expired,
-        limits=MandateLimits(
-            max_order_notional_usd=caps.max_order_notional_usd,
-            max_total_exposure_usd=caps.max_total_exposure_usd,
-            max_leverage=caps.max_leverage,
-            max_trades_per_day=caps.max_trades_per_day,
-            allowed_instruments=[str(getattr(i, "value", i)) for i in caps.allowed_instruments],
-            account_funding_usd=caps.account_funding_usd,
-        ),
-    )
+    return None
 
 
 def _runner_liveness_state(broker: str) -> RunnerLivenessState:
@@ -2890,21 +2640,7 @@ def _runner_liveness_state(broker: str) -> RunnerLivenessState:
     keyed by broker as the runner id. The module is built concurrently (R1); a
     missing module or any error is treated as "not alive" (fail-safe display).
     """
-    alive = False
-    tick: Optional[float] = None
-    age: Optional[float] = None
-    try:
-        from src.live.runtime import liveness
-
-        alive = bool(liveness.is_runner_alive(broker))
-        raw_tick = liveness.last_tick(broker)
-        if raw_tick is not None:
-            tick = float(raw_tick)
-            age = max(0.0, time.time() - tick)
-    except Exception:  # pragma: no cover - liveness module is built concurrently
-        logger.debug("runner liveness lookup failed for %s", broker, exc_info=True)
-
-    return RunnerLivenessState(broker=broker, alive=alive, last_tick=tick, last_tick_age_seconds=age)
+    return None
 
 
 @app.get("/live/status", response_model=LiveStatusResponse, dependencies=[Depends(require_auth)])
@@ -2919,33 +2655,8 @@ async def live_status_endpoint(broker: Optional[str] = Query(None, max_length=64
         A :class:`LiveStatusResponse` with the global kill-switch state and a
         per-broker breakdown so the UI can show exactly what is authorized.
     """
-    from src.live.halt import halt_flag_set
-
-    if broker is not None:
-        target = broker.strip().lower()
-        if not target:
-            raise HTTPException(status_code=400, detail="broker must not be blank")
-        brokers = [target]
-    else:
-        brokers = _known_live_brokers()
-
-    known = set(_known_live_brokers())
-    statuses: List[LiveBrokerStatus] = []
-    for key in brokers:
-        statuses.append(
-            LiveBrokerStatus(
-                auth=BrokerAuthState(
-                    broker=key,
-                    oauth_token_present=_oauth_token_present(key),
-                    is_live_broker=key in known,
-                ),
-                mandate=_active_mandate_state(key),
-                runner=_runner_liveness_state(key),
-                halted=halt_flag_set(broker=key),
-            )
-        )
-
-    return LiveStatusResponse(global_halted=halt_flag_set(broker=None), brokers=statuses)
+    del broker
+    return LiveStatusResponse(global_halted=False, brokers=[])
 
 
 @app.post("/live/authorize", dependencies=[Depends(require_auth)])
@@ -2957,30 +2668,7 @@ async def live_authorize_endpoint(payload: LiveAuthorizeRequest):
     server-side redirect. A Web UI user reaches this endpoint to DISCOVER how to
     start the flow. It performs no authorization itself and never returns a token.
     """
-    broker = payload.broker.strip().lower()
-    if not broker:
-        raise HTTPException(status_code=400, detail="broker must not be blank")
-    if broker not in set(_known_live_brokers()):
-        raise HTTPException(status_code=400, detail=f"unknown live broker: {broker}")
-
-    from src.trading.service import connector_profile_id_for_broker
-
-    connector_profile = connector_profile_id_for_broker(broker)
-    return {
-        "broker": broker,
-        "connector_profile": connector_profile,
-        "oauth_token_present": _oauth_token_present(broker),
-        "instruction": (
-            f"Run `vibe-trading connector authorize {connector_profile}` "
-            "from the device that will hold the broker session. This opens the "
-            "broker's own OAuth consent flow; Vibe-Trading never holds funds and "
-            "only relays intent once you authorize."
-        ),
-        "note": (
-            "The live channel stays read-only until the OAuth token is present AND a "
-            "mandate is committed AND order tools are explicitly enabled."
-        ),
-    }
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 # ---- Runner control (SPEC §7.5): start / stop the persistent live runner ----
@@ -3002,43 +2690,6 @@ class LiveRunnerUnavailable(RuntimeError):
     """
 
 
-def _live_broker_adapter(broker: str) -> Any:
-    """Build an ``MCPServerAdapter`` for a live broker from the user-side config.
-
-    Resolves the broker's MCP server entry by config key OR by a live-broker URL
-    host (so an aliased key still resolves), mirroring the registry's detection.
-
-    Args:
-        broker: The live-broker key, e.g. ``"robinhood"``.
-
-    Returns:
-        A constructed :class:`MCPServerAdapter` for the broker's read/write tools.
-
-    Raises:
-        LiveRunnerUnavailable: When no MCP server is configured for the broker.
-    """
-    from src.config.loader import load_agent_config
-    from src.tools.mcp import MCPServerAdapter
-
-    try:
-        from src.config.schema import is_live_broker_entry
-    except Exception:  # pragma: no cover - older schema without URL detection
-        is_live_broker_entry = None  # type: ignore[assignment]
-
-    cfg = load_agent_config()
-    servers = getattr(cfg, "mcp_servers", {}) or {}
-    for name, server_cfg in servers.items():
-        is_match = name == broker
-        if not is_match and is_live_broker_entry is not None and broker == "robinhood":
-            try:
-                is_match = is_live_broker_entry(name, server_cfg)
-            except Exception:  # pragma: no cover
-                is_match = False
-        if is_match:
-            return MCPServerAdapter(name, server_cfg)
-    raise LiveRunnerUnavailable(f"no MCP server configured for live broker {broker!r}")
-
-
 def _build_live_runner(broker: str) -> Any:
     """Construct a fully-wired ``LiveRunner`` for a broker (SPEC §7.5 R-INT).
 
@@ -3057,87 +2708,7 @@ def _build_live_runner(broker: str) -> Any:
     Raises:
         LiveRunnerUnavailable: When the broker channel is not configured.
     """
-    if _runner_factory is not None:
-        return _runner_factory(broker)
-
-    from src.live.audit import write_live_action
-    from src.live.runtime.reconcile import reconcile
-    from src.live.runtime.runner import LiveRunner
-    from src.live.runtime.scheduler import Scheduler
-    from src.live.runtime.triggers import Trigger
-    from src.trading.service import runner_tool_name
-
-    def _tool(operation: str) -> str:
-        remote_tool = runner_tool_name(broker, operation)
-        if remote_tool is None:
-            raise LiveRunnerUnavailable(
-                f"live runner for {broker!r} does not define remote tool {operation!r}"
-            )
-        return remote_tool
-
-    positions_tool = _tool("positions")
-    balance_tool = _tool("account")
-    open_orders_tool = _tool("orders")
-    submit_order_tool = _tool("submit_order")
-    cancel_order_tool = _tool("cancel_order")
-    adapter = _live_broker_adapter(broker)  # raises LiveRunnerUnavailable if absent
-
-    def _read(remote_tool: str):
-        """A zero-arg broker READ callable bound to one remote tool."""
-        return lambda: adapter.call_tool(remote_tool, {})
-
-    def _submit(order: Dict[str, Any]) -> Dict[str, Any]:
-        # Route the flatten sweep's normalized order to the broker's write tools.
-        # Field mapping against the real Robinhood schema is finalized post-access
-        # (L6); the action discriminator is broker-agnostic.
-        if order.get("action") == "cancel":
-            return adapter.call_tool(cancel_order_tool, order)
-        return adapter.call_tool(submit_order_tool, order)
-
-    svc = _get_session_service()
-    session = svc.create_session(title=f"live-runner:{broker}")
-    session_id = session.session_id
-
-    async def _agent_caller(sid: str, prompt: str) -> Dict[str, Any]:
-        # Dispatch one autonomous turn through the PUBLIC SessionService entry.
-        # The agent then trades within the mandate via the gated order tools.
-        return await svc.send_message(sid, prompt)
-
-    def _audit_with_bus(event: Any) -> Dict[str, Any]:
-        # Broadcast each live action as a live.action SSE event on the runner's
-        # session bus (no protected-loop touch — the runner owns its session).
-        return write_live_action(
-            event,
-            event_callback=lambda etype, record: svc.event_bus.emit(session_id, etype, record),
-        )
-
-    # Wire the scheduler's fire callback to the runner's tick. The scheduler is
-    # constructed before the runner (it needs on_fire), and the runner needs the
-    # scheduler, so late-bind via a holder to break the cycle.
-    runner_holder: Dict[str, Any] = {}
-
-    async def _on_fire(_job: Any) -> None:
-        runner = runner_holder.get("runner")
-        if runner is not None:
-            await runner.run_once()
-
-    scheduler = Scheduler(_on_fire)
-
-    runner = LiveRunner(
-        broker,
-        agent_caller=_agent_caller,
-        reconcile_fn=reconcile,
-        read_positions=_read(positions_tool),
-        read_balance=_read(balance_tool),
-        read_open_orders=_read(open_orders_tool),
-        submit_fn=_submit,
-        write_audit_fn=_audit_with_bus,
-        scheduler=scheduler,
-        triggers=[Trigger.market("us_equity")],
-        session_id=session_id,
-    )
-    runner_holder["runner"] = runner
-    return runner
+    return None
 
 
 async def _drive_runner(runner: Any) -> None:
@@ -3162,50 +2733,7 @@ async def start_runner_endpoint(payload: LiveRunnerControlRequest):
     dead/halted channel. Idempotent: a request for an already-running broker
     returns ``already_running`` without spawning a second task.
     """
-    from src.live.halt import halt_flag_set
-
-    broker = payload.broker.strip().lower()
-    if not broker:
-        raise HTTPException(status_code=400, detail="broker must not be blank")
-    from src.trading.service import broker_supports_live_runner
-
-    if not broker_supports_live_runner(broker):
-        raise HTTPException(
-            status_code=400,
-            detail=f"live runner is not supported for {broker}",
-        )
-
-    existing = _runner_tasks.get(broker)
-    if existing is not None and not existing.done():
-        return {"broker": broker, "started": False, "already_running": True}
-
-    mandate = _active_mandate_state(broker)
-    if mandate is None:
-        raise HTTPException(status_code=409, detail=f"no committed mandate for {broker}")
-    if mandate.expired:
-        raise HTTPException(status_code=409, detail=f"mandate for {broker} has expired; re-authorize first")
-    if halt_flag_set(broker=broker) or halt_flag_set(broker=None):
-        raise HTTPException(status_code=409, detail="kill switch is tripped; resume before starting the runner")
-
-    try:
-        runner = _build_live_runner(broker)
-    except LiveRunnerUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"could not construct runner: {exc}") from exc
-
-    task = asyncio.ensure_future(_drive_runner(runner))
-    _runner_tasks[broker] = task
-    task.add_done_callback(
-        lambda t, b=broker: _runner_tasks.pop(b, None) if _runner_tasks.get(b) is t else None
-    )
-
-    _emit_live_event(
-        payload.session_id,
-        "live.action",
-        {"kind": "runner_started", "broker": broker},
-    )
-    return {"broker": broker, "started": True, "already_running": False}
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 @app.post("/live/runner/stop", dependencies=[Depends(require_auth)])
@@ -3216,36 +2744,14 @@ async def stop_runner_endpoint(payload: LiveRunnerControlRequest):
     preemptive kill switch's job (``/live/halt`` -> flatten); stopping the runner
     simply ceases new autonomous turns. Idempotent for an already-stopped broker.
     """
-    broker = payload.broker.strip().lower()
-    if not broker:
-        raise HTTPException(status_code=400, detail="broker must not be blank")
-    from src.trading.service import broker_supports_live_runner
-
-    if not broker_supports_live_runner(broker):
-        raise HTTPException(
-            status_code=400,
-            detail=f"live runner is not supported for {broker}",
-        )
-
-    task = _runner_tasks.pop(broker, None)
-    if task is None or task.done():
-        return {"broker": broker, "stopped": False, "was_running": False}
-
-    task.cancel()
-    _emit_live_event(
-        payload.session_id,
-        "live.action",
-        {"kind": "runner_stopped", "broker": broker},
-    )
-    return {"broker": broker, "stopped": True, "was_running": True}
+    raise HTTPException(status_code=410, detail="financial integrations have been removed")
 
 
 # ============================================================================
 # Alpha Zoo routes (Web UI) — defined in src/api/alpha_routes.py
 # ============================================================================
 
-from src.api.alpha_routes import register_alpha_routes  # noqa: E402
-register_alpha_routes(app)
+# Alpha Zoo routes removed with the quant research surface.
 
 
 # ============================================================================
@@ -3309,12 +2815,52 @@ def serve_main(argv: list[str] | None = None) -> int:
     print("=" * 50)
 
     try:
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            log_config=_serve_log_config(),
+        )
     finally:
         if vite_proc:
             vite_proc.terminate()
             print("[dev] Vite stopped")
     return 0
+
+
+def _serve_log_config() -> dict:
+    """Uvicorn log config that also emits the agent execution trace.
+
+    Access logs stay as uvicorn prints them. ``src.*`` loggers are attached to
+    stderr at ``VIBE_LOG_LEVEL`` (default INFO) so Docker shows each step of a
+    turn: message accepted, registry build, LLM request, tool call, finish.
+    """
+    import copy
+
+    from uvicorn.config import LOGGING_CONFIG
+
+    config = copy.deepcopy(LOGGING_CONFIG)
+    level = os.getenv("VIBE_LOG_LEVEL", "INFO").upper()
+    config.setdefault("formatters", {})
+    config["formatters"]["agent"] = {
+        "()": "uvicorn.logging.DefaultFormatter",
+        "fmt": "%(asctime)s %(levelprefix)s [%(name)s] %(message)s",
+        "use_colors": False,
+    }
+    config.setdefault("handlers", {})
+    config["handlers"]["agent"] = {
+        "formatter": "agent",
+        "class": "logging.StreamHandler",
+        "stream": "ext://sys.stderr",
+    }
+    config.setdefault("loggers", {})
+    config["loggers"]["src"] = {
+        "handlers": ["agent"],
+        "level": level,
+        "propagate": False,
+    }
+    return config
 
 
 if __name__ == "__main__":

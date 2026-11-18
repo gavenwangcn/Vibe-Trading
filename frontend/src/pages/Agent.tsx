@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
@@ -41,10 +41,6 @@ const act = () => useAgentStore.getState();
 
 /** Poll cadence for the shared `GET /live/status` snapshot. */
 const LIVE_STATUS_POLL_INTERVAL_MS = 15_000;
-const CONNECTOR_CHECK_PROMPT =
-  "List my trading connector profiles, show which one is selected, then check that selected connector. If it is not ready, tell me exactly what setup step is missing. Do not place or modify orders.";
-const CONNECTOR_PORTFOLIO_PROMPT =
-  "Use the selected trading connector profile to summarize my account, positions, concentration, cash, and portfolio risk. Do not place or modify orders.";
 
 /* ---------- Connector runtime channel ----------
  * Mandate proposals and live-action chips render as standalone timeline items,
@@ -1404,56 +1400,6 @@ export function Agent() {
                     <Paperclip className="h-4 w-4" />
                     Upload PDF document
                   </button>
-                  <div className="border-t my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      setSwarmPreset(null);
-                      setGoalComposerActive(true);
-                      inputRef.current?.focus();
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Target className="h-4 w-4" />
-                    Research Goal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      setGoalComposerActive(false);
-                      setSwarmPreset({ name: "auto", title: "Agent Swarm" });
-                      inputRef.current?.focus();
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Users className="h-4 w-4" />
-                    Agent Swarm
-                  </button>
-                  <div className="border-t my-1" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      void runPrompt(CONNECTOR_CHECK_PROMPT);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Landmark className="h-4 w-4" />
-                    Check Trading Connector
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowUploadMenu(false);
-                      void runPrompt(CONNECTOR_PORTFOLIO_PROMPT);
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
-                  >
-                    <Landmark className="h-4 w-4" />
-                    Analyze Connector Portfolio
-                  </button>
                 </div>
               )}
             </div>
@@ -1499,7 +1445,7 @@ export function Agent() {
               placeholder={
                 goalComposerActive
                   ? "Describe the research goal to attach to this session"
-                  : "e.g. Create a dual MA crossover strategy for 000001.SZ, backtest 2024"
+                  : "上传文档或贴上网页链接，然后提问"
               }
               className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto"
               disabled={status === "streaming"}

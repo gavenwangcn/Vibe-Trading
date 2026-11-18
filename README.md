@@ -810,82 +810,10 @@ Run any CLI command — tools from ordinary external servers are automatically i
 vibe-trading run "use my-server to do X"
 ```
 
-### Official IBKR MCP read-only probe
+### Broker connectors
 
-Vibe-Trading can connect directly to Interactive Brokers' official remote MCP
-endpoint in read-only mode. Add this to `~/.vibe-trading/agent.json`:
-
-```json
-{
-  "mcpServers": {
-    "ibkr": {
-      "type": "streamableHttp",
-      "url": "https://api.ibkr.com/v1/api/mcp",
-      "auth": {
-        "type": "oauth",
-        "scopes": ["mcp.read"],
-        "clientName": "Vibe-Trading",
-        "cacheDir": "~/.vibe-trading/live/ibkr/oauth"
-      },
-      "enabledTools": ["*"]
-    }
-  }
-}
-```
-
-Then start the browser OAuth flow:
-
-```bash
-vibe-trading connector authorize ibkr-live-official-mcp-readonly
-```
-
-The wildcard is accepted only for IBKR's `mcp.read` probe. Authorizing this
-profile confirms access to IBKR's official read scope; generic `trading_account`
-and `trading_positions` calls stay disabled until IBKR publishes stable read
-tool names that Vibe-Trading can map safely. A config that adds `mcp.write` must
-pin an explicit tool allowlist and still passes through the live order guard.
-
-If IBKR issues a pre-registered OAuth client, add `clientId` and `clientSecret`
-inside `auth`.
-
-### Trading connectors: fastest path
-
-For users who cannot wait for IBKR OAuth client approval, connect to a local
-TWS or IB Gateway session. Credentials stay inside IBKR's desktop app; Vibe-
-Trading only connects to `127.0.0.1` and exposes it as a connector profile.
-
-Install the optional SDK:
-
-```bash
-pip install "vibe-trading-ai[ibkr]"
-```
-
-Open TWS paper trading or IB Gateway paper, enable API socket clients, then run:
-
-```bash
-vibe-trading connector list
-vibe-trading connector use ibkr-paper-local
-vibe-trading connector configure ibkr-paper-local --yes
-vibe-trading connector check
-vibe-trading connector account
-vibe-trading connector positions
-vibe-trading connector orders
-vibe-trading connector quote AAPL
-vibe-trading connector history AAPL --duration "30 D" --bar-size "1 day"
-```
-
-Default local ports:
-
-| App | Paper | Live read-only |
-|-----|-------|----------------|
-| TWS | `7497` | `7496` |
-| IB Gateway | `4002` | `4001` |
-
-The agent exposes connector-scoped tools named `trading_connections`,
-`trading_select_connection`, `trading_check`, `trading_account`,
-`trading_positions`, `trading_orders`, `trading_quote`, and `trading_history`.
-Live-broker raw MCP tools are not registered directly as `mcp_<broker>_*`.
-No IBKR order-placement tool is registered.
+IBKR, Robinhood, local TWS, and other broker or market-data connectors are not
+part of this agent. Use a generic MCP server when a document source is needed.
 
 ### Config reference
 

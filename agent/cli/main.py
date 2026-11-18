@@ -770,8 +770,6 @@ def _print_input_hint(console: Any, hint: str) -> None:
 #: Bare turns that trip the kill switch when typed alone (case-insensitive).
 _HALT_WORDS = frozenset({"停", "停止", "stop", "kill", "halt", "停手"})
 
-_DEFAULT_LIVE_BROKER = "robinhood"
-
 
 def _is_halt_turn(text: str) -> bool:
     """Return True if ``text`` is a bare kill-switch turn.
@@ -802,18 +800,7 @@ def _trip_halt_from_repl(console: Any, *, reason: str) -> None:
         console: Rich console for the confirmation notice.
         reason: Human-readable reason recorded in the sentinel.
     """
-    try:
-        from src.live.halt import trip_halt
-
-        path = trip_halt(by="cli", reason=reason)
-    except Exception as exc:  # noqa: BLE001 — never let a halt failure kill the loop
-        console.print(f"[bold red]Failed to trip kill switch:[/bold red] {exc}")
-        return
-    console.print(
-        "[bold red]Live trading halted[/bold red] — all live order tools are now "
-        "disabled until you run [bold]/resume[/bold] or [bold]vibe-trading connector resume[/bold]."
-    )
-    console.print(f"[dim]HALT sentinel: {path}[/dim]")
+    return None
 
 
 def _clear_halt_from_repl(console: Any) -> None:
@@ -827,19 +814,7 @@ def _clear_halt_from_repl(console: Any) -> None:
     Args:
         console: Rich console for the confirmation notice.
     """
-    try:
-        from src.live.halt import clear_halt
-
-        cleared = clear_halt()
-    except Exception as exc:  # noqa: BLE001 — never let a resume failure kill the loop
-        console.print(f"[bold red]Failed to clear kill switch:[/bold red] {exc}")
-        return
-    if cleared:
-        console.print(
-            "[green]Live trading re-enabled[/green] — the global kill switch is cleared."
-        )
-    else:
-        console.print("[dim]No active global halt to clear.[/dim]")
+    return None
 
 
 def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
@@ -855,7 +830,7 @@ def _run_connector_command_from_repl(console: Any, args: list[str]) -> None:
 
     Args:
         console: Rich console for error messages.
-        args: Tokens following ``/connector`` (e.g. ``["status", "robinhood-live-mcp"]``).
+        args: Tokens following ``/connector``.
     """
     from cli._legacy import _build_parser, _dispatch_connector
 
@@ -980,22 +955,8 @@ def _commit_mandate(proposal: Dict[str, Any], selected_ordinal: int) -> Dict[str
         The decoded commit response (``mandate_id`` / ``consent_record_id`` on
         success), or an ``{"status": "error", ...}`` envelope on failure.
     """
-    import httpx
-
-    base = os.environ.get("VIBE_TRADING_API_URL", "http://127.0.0.1:8000").rstrip("/")
-    body = {
-        "proposal_id": proposal.get("proposal_id"),
-        "selected_ordinal": selected_ordinal,
-        "adjustments": None,
-        "session_id": proposal.get("session_id"),
-        "consent_ack": True,
-    }
-    try:
-        response = httpx.post(f"{base}/mandate/commit", json=body, timeout=30.0)
-        response.raise_for_status()
-        return response.json()
-    except Exception as exc:  # noqa: BLE001 — surface a clean error to the user
-        return {"status": "error", "error": str(exc)}
+    del proposal, selected_ordinal
+    return {"status": "error", "error": "financial integrations have been removed"}
 
 
 def _handle_proposal_reply(text: str, ctx: InteractiveContext) -> bool:

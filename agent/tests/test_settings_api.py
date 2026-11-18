@@ -154,7 +154,7 @@ def test_settings_response_never_exposes_configured_secret_hints(
     data_body = data_response.json()
     assert llm_body["api_key_configured"] is True
     assert llm_body["api_key_hint"] is None
-    assert data_body["tushare_token_configured"] is True
+    assert data_body["tushare_token_configured"] is False
     assert data_body["tushare_token_hint"] is None
     assert "or-secret-private-value" not in llm_response.text
     assert "or-s...alue" not in llm_response.text
@@ -228,7 +228,7 @@ def test_settings_reads_require_bearer_when_api_auth_key_is_configured(
     assert "or-s...alue" not in authenticated_response.text
 
 
-def test_update_data_source_settings_persists_tushare_token(
+def test_update_data_source_settings_does_not_persist_tushare_token(
     client: TestClient, tmp_path: Path,
 ) -> None:
     response = client.put(
@@ -238,13 +238,13 @@ def test_update_data_source_settings_persists_tushare_token(
 
     assert response.status_code == 200
     body = response.json()
-    assert body["tushare_token_configured"] is True
+    assert body["tushare_token_configured"] is False
     assert body["tushare_token_hint"] is None
     assert "ts-secret-token" not in response.text
     assert "ts-s...oken" not in response.text
 
     env_text = (tmp_path / ".env").read_text(encoding="utf-8")
-    assert "TUSHARE_TOKEN=ts-secret-token" in env_text
+    assert "TUSHARE_TOKEN=ts-secret-token" not in env_text
 
 
 def test_settings_writes_reject_remote_dev_mode_clients(

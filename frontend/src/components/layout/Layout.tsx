@@ -14,7 +14,6 @@ import {
   PlugZap,
   ChevronRight,
   Settings,
-  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
@@ -22,15 +21,11 @@ import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
-import { SwarmWorkflowPanel } from "@/components/layout/SwarmWorkflowPanel";
 import { SkillsDirectoryPanel } from "@/components/layout/SkillsDirectoryPanel";
 
 const NAV = [
-  { to: "/", icon: BarChart3, key: "home" as const },
   { to: "/agent", icon: Bot, key: "agent" as const },
-  { to: "/alpha-zoo", icon: Layers, key: "alphaZoo" as const },
   { to: "/settings", icon: Settings, key: "settings" as const },
-  { to: "/correlation", icon: BarChart3, key: "correlation" as const },
 ];
 
 /** Title starts with "WeChat" (case-insensitive) or contains 微信 → 全微信 group. */
@@ -303,10 +298,8 @@ export function Layout() {
           ))}
         </nav>
 
-        {/* Swarm workflow docs + Sessions — hidden when collapsed */}
         {!collapsed && (
           <>
-            <SwarmWorkflowPanel />
             <SkillsDirectoryPanel />
             <div className="mx-3 my-2 border-t border-border/60" role="separator" />
             <div className="px-3 pb-2">

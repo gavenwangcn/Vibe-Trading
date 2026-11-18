@@ -431,28 +431,8 @@ def run_onboarding(*, console: Console | None = None) -> Path | None:
         _save_partial(values)
         return "ok"
 
-    def step_tushare() -> object:
-        choices = [
-            ("__skip__", "No, skip (most users)"),
-            ("__paste__", "Yes — paste my Tushare token"),
-        ]
-        decision = _select_with_back(
-            "Enable Tushare for China A-share data? (optional)",
-            choices, default_index=0, console=cons,
-        )
-        if decision is BACK or decision is CANCEL:
-            return decision
-        if decision == "__paste__":
-            token = _prompt_secret("Tushare token", console=cons)
-            if token is BACK or token is CANCEL:
-                return token
-            if str(token).strip():
-                values["TUSHARE_TOKEN"] = str(token).strip()
-                _save_partial(values)
-        return "ok"
-
     steps: list[Callable[[], object]] = [
-        step_provider, step_model, step_key, step_timeout, step_tushare,
+        step_provider, step_model, step_key, step_timeout,
     ]
 
     i = 0

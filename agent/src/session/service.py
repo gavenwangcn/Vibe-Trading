@@ -8,8 +8,20 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import json
+import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+
+logger = logging.getLogger(__name__)
+
+
+def _preview(text: str, limit: int = 120) -> str:
+    """Collapse whitespace and cap a log field."""
+    compact = " ".join((text or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "…"
 
 # Dedicated thread pool limited to four concurrent agents to avoid exhausting the default executor.
 _AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="agent")
@@ -108,6 +120,10 @@ class SessionService:
             raise ValueError(f"Session {session_id} not found")
 
         plain = plain_text_for_index(content)
+        logger.info(
+            "send_message session=%s role=%s chars=%d preview=%r",
+            session_id, role, len(plain), _preview(plain),
+        )
         meta: Dict[str, Any] = {}
         if isinstance(content, list):
             meta["user_content"] = content
@@ -137,6 +153,10 @@ class SessionService:
         self.store.update_session(session)
         self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": plain})
 
+        logger.info(
+            "attempt queued session=%s attempt=%s shell_tools=%s",
+            session_id, attempt.attempt_id, include_shell_tools,
+        )
         asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}
 
@@ -189,7 +209,9 @@ class SessionService:
         """
         loop = self._active_loops.get(session_id)
         if loop is None:
+            logger.info("cancel session=%s result=no_active_loop", session_id)
             return False
+        logger.info("cancel session=%s result=signalled", session_id)
         loop.cancel()
         return True
 
@@ -198,6 +220,11 @@ class SessionService:
         attempt.mark_running()
         self.store.update_attempt(attempt)
         self.event_bus.emit(session.session_id, "attempt.started", {"attempt_id": attempt.attempt_id})
+        logger.info(
+            "attempt start session=%s attempt=%s",
+            session.session_id, attempt.attempt_id,
+        )
+        started = time.perf_counter()
 
         try:
             messages = self.store.get_messages(session.session_id)
@@ -229,6 +256,11 @@ class SessionService:
             )
             self.store.append_message(reply)
             self._search_index.index_message(session.session_id, "assistant", reply.content)
+            logger.info(
+                "attempt finish session=%s attempt=%s status=%s elapsed=%.2fs error=%s",
+                session.session_id, attempt.attempt_id, attempt.status.value,
+                time.perf_counter() - started, _preview(attempt.error or "", 200) or "-",
+            )
             self.event_bus.emit(
                 session.session_id,
                 "attempt.completed" if attempt.status == AttemptStatus.COMPLETED else "attempt.failed",
@@ -237,6 +269,10 @@ class SessionService:
             )
 
         except Exception as exc:
+            logger.exception(
+                "attempt crashed session=%s attempt=%s elapsed=%.2fs",
+                session.session_id, attempt.attempt_id, time.perf_counter() - started,
+            )
             attempt.mark_failed(error=str(exc))
             self.store.update_attempt(attempt)
             self.event_bus.emit(session.session_id, "attempt.failed", {"attempt_id": attempt.attempt_id, "error": str(exc)})
@@ -269,11 +305,23 @@ class SessionService:
         from src.memory.persistent import PersistentMemory
         from src.config.loader import load_runtime_agent_config, sanitize_session_overrides
 
-        llm = ChatLLM()
-        pm = PersistentMemory()
-
         session_id = attempt.session_id
         attempt_id = attempt.attempt_id
+        logger.info("agent setup start session=%s attempt=%s", session_id, attempt_id)
+        setup_started = time.perf_counter()
+        step_started = time.perf_counter()
+        llm = ChatLLM()
+        logger.info(
+            "ChatLLM ready session=%s model=%s elapsed=%.2fs",
+            session_id, getattr(llm, "model_name", "") or "-", time.perf_counter() - step_started,
+        )
+        step_started = time.perf_counter()
+        pm = PersistentMemory()
+        logger.info(
+            "PersistentMemory ready session=%s elapsed=%.2fs",
+            session_id, time.perf_counter() - step_started,
+        )
+
         loop = asyncio.get_running_loop()
 
         sess = self.store.get_session(session_id)
@@ -291,6 +339,8 @@ class SessionService:
             """Forward MCP server-name collision warnings to the operator event channel."""
             self.event_bus.emit(session_id, "mcp.warning", {"attempt_id": attempt_id, "message": msg})
 
+        logger.info("build_registry start session=%s attempt=%s", session_id, attempt_id)
+        step_started = time.perf_counter()
         registry = await loop.run_in_executor(
             _AGENT_EXECUTOR,
             lambda: build_registry(
@@ -301,6 +351,14 @@ class SessionService:
                 event_callback=event_callback,
                 warn_callback=_mcp_collision_warn,
             ),
+        )
+        try:
+            tool_count = len(registry)
+        except TypeError:
+            tool_count = -1
+        logger.info(
+            "build_registry done session=%s tools=%d elapsed=%.2fs",
+            session_id, tool_count, time.perf_counter() - step_started,
         )
 
         agent = AgentLoop(
@@ -315,6 +373,11 @@ class SessionService:
         # Build the message history context.
         history = self._convert_messages_to_history(messages) if messages else None
 
+        logger.info(
+            "agent.run start session=%s attempt=%s history=%d setup_elapsed=%.2fs",
+            session_id, attempt_id, len(history or []), time.perf_counter() - setup_started,
+        )
+        run_started = time.perf_counter()
         try:
             user_turn: Union[str, List[Dict[str, Any]]] = (
                 attempt.user_content if attempt.user_content is not None else attempt.prompt
@@ -327,6 +390,11 @@ class SessionService:
                     session_id=session_id,
                     session_config=session_config,
                 ),
+            )
+            logger.info(
+                "agent.run done session=%s attempt=%s status=%s iterations=%s elapsed=%.2fs",
+                session_id, attempt_id, result.get("status"), result.get("iterations"),
+                time.perf_counter() - run_started,
             )
         finally:
             self._active_loops.pop(session_id, None)

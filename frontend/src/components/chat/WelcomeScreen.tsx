@@ -1,4 +1,5 @@
-﻿﻿import { Bot, TrendingUp, Globe, Sparkles, Users, UserCircle2, NotebookPen, Landmark } from "lucide-react";
+﻿import type { ReactNode } from "react";
+import { Bot, FileText, Globe } from "lucide-react";
 
 interface Example {
   title: string;
@@ -8,165 +9,49 @@ interface Example {
 
 interface Category {
   label: string;
-  icon: any;
+  icon: ReactNode;
   color: string;
   examples: Example[];
 }
 
 const CATEGORIES: Category[] = [
   {
-    label: "多市场回测",
-    icon: <TrendingUp className="h-4 w-4" />,
-    color: "text-red-400 border-red-500/30 hover:border-red-500/60 hover:bg-red-500/5",
+    label: "文档问答",
+    icon: <FileText className="h-4 w-4" />,
+    color: "text-sky-400 border-sky-500/30 hover:border-sky-500/60 hover:bg-sky-500/5",
     examples: [
       {
-        title: "跨市场组合",
-        desc: "A 股 + 加密 + 美股，使用风险平价优化",
-        prompt: "回测 2024 全年风险平价组合：000001.SZ、BTC-USDT、AAPL，并对比等权基准",
+        title: "读上传的文档",
+        desc: "从 PDF、Word 或表格里回答问题",
+        prompt: "请阅读我刚上传的文档，先给出摘要，再列出可以继续追问的问题",
       },
       {
-        title: "BTC 5 分钟 MACD 策略",
-        desc: "分钟级加密回测，使用 OKX 实时数据",
-        prompt: "回测 BTC-USDT 5 分钟 MACD 策略，fast=12 slow=26 signal=9，最近 30 天",
-      },
-      {
-        title: "美股科技最大分散组合",
-        desc: "通过 yfinance 对 FAANG+ 做组合优化",
-        prompt: "对 AAPL、MSFT、GOOGL、AMZN、NVDA 使用 max_diversification 组合优化器，回测 2024 全年",
+        title: "对照两段内容",
+        desc: "只根据文档原文回答，不补充外部事实",
+        prompt: "只根据已读取的文档回答：这份材料的结论是什么，有哪些限制条件？",
       },
     ],
   },
   {
-    label: "研究与分析",
-    icon: <Sparkles className="h-4 w-4" />,
-    color: "text-amber-400 border-amber-500/30 hover:border-amber-500/60 hover:bg-amber-500/5",
-    examples: [
-      {
-        title: "多因子 Alpha 模型",
-        desc: "在 300 只股票上做 IC 加权因子合成",
-        prompt: "在沪深 300 成分股上，使用动量、反转、波动率、换手率构建多因子 Alpha，并按 IC 加权，回测 2023-2024",
-      },
-      {
-        title: "期权 Greeks 分析",
-        desc: "Black-Scholes 定价 + Delta/Gamma/Theta/Vega",
-        prompt: "用 Black-Scholes 计算期权 Greeks：spot=100, strike=105, risk-free rate=3%, vol=25%, expiry=90 days，并分析 Delta/Gamma/Theta/Vega",
-      },
-    ],
-  },
-  {
-    label: "Swarm 团队",
-    icon: <Users className="h-4 w-4" />,
-    color: "text-violet-400 border-violet-500/30 hover:border-violet-500/60 hover:bg-violet-500/5",
-    examples: [
-      {
-        title: "投委会评审",
-        desc: "多代理辩论：多空观点、风险复核、PM 决策",
-        prompt: "[Swarm Team Mode] 使用 investment_committee 预设，评估在当前市场条件下 NVDA 应该做多还是做空",
-      },
-      {
-        title: "量化策略工作台",
-        desc: "筛选 → 因子研究 → 回测 → 风险审计",
-        prompt: "[Swarm Team Mode] 使用 quant_strategy_desk 预设，寻找并回测沪深 300 上最优动量策略",
-      },
-    ],
-  },
-  {
-    label: "文档与网页研究",
+    label: "网页阅读",
     icon: <Globe className="h-4 w-4" />,
-    color: "text-blue-400 border-blue-500/30 hover:border-blue-500/60 hover:bg-blue-500/5",
-    examples: [
-      {
-        title: "分析财报 PDF",
-        desc: "上传 PDF 并提问财务相关问题",
-        prompt: "总结已上传财报中的关键财务指标、主要风险和未来展望",
-      },
-      {
-        title: "网页研究：宏观展望",
-        desc: "读取最新网页信息做宏观分析",
-        prompt: "阅读最新美联储会议纪要，并总结对股票和加密市场的关键影响",
-      },
-    ],
-  },
-  {
-    label: "Trade Journal",
-    icon: <NotebookPen className="h-4 w-4" />,
-    color: "text-orange-400 border-orange-500/30 hover:border-orange-500/60 hover:bg-orange-500/5",
-    examples: [
-      {
-        title: "Analyze My Broker Export",
-        desc: "Parse 同花顺/东财/富途/generic CSV — holding days, win rate, PnL ratio, hourly distribution",
-        prompt: "Analyze the trade journal I just uploaded — full profile with holding stats, win rate, top symbols, and hourly distribution",
-      },
-      {
-        title: "Diagnose My Behavior Biases",
-        desc: "Disposition effect, overtrading, chasing momentum, anchoring — severity + numeric evidence",
-        prompt: "Run the 4 behavior diagnostics on my trade journal (disposition, overtrading, chasing, anchoring) and tell me which bias hurts my PnL most",
-      },
-    ],
-  },
-  {
-    label: "Trading Connectors",
-    icon: <Landmark className="h-4 w-4" />,
-    color: "text-cyan-400 border-cyan-500/30 hover:border-cyan-500/60 hover:bg-cyan-500/5",
-    examples: [
-      {
-        title: "Check Selected Connector",
-        desc: "List connector profiles and verify the selected one",
-        prompt: "List my trading connector profiles, show which one is selected, then check that selected connector. If it is not ready, tell me exactly what setup step is missing. Do not place or modify orders.",
-      },
-      {
-        title: "Analyze Connector Portfolio",
-        desc: "Read account summary and positions from the selected connector",
-        prompt: "Use the selected trading connector profile to summarize my account, positions, concentration, cash, and portfolio risk. Do not place or modify orders.",
-      },
-      {
-        title: "Quote & Trend",
-        desc: "Fetch a quote plus recent daily bars through the selected connector",
-        prompt: "Use the selected trading connector to fetch an AAPL quote and 30 daily bars, then summarize the current quote versus the recent trend. Keep it read-only.",
-      },
-    ],
-  },
-  {
-    label: "Shadow Account",
-    icon: <UserCircle2 className="h-4 w-4" />,
     color: "text-emerald-400 border-emerald-500/30 hover:border-emerald-500/60 hover:bg-emerald-500/5",
     examples: [
       {
-        title: "Train My Shadow from Journal",
-        desc: "Extract your strategy rules from a broker CSV and persist a Shadow profile",
-        prompt: "Train my shadow account from the trading journal I just uploaded — show the extracted rules and confirm they look like my behavior",
+        title: "阅读一个链接",
+        desc: "把网页转成正文后再回答",
+        prompt: "请读取这个网页并总结要点：https://example.com",
       },
       {
-        title: "How Much Am I Leaving on the Table?",
-        desc: "Backtest your shadow strategy and attribute delta vs. your actual PnL",
-        prompt: "Run a shadow backtest for the last 90 days on the US market and break down where my PnL diverged from the shadow (rule violations, early exits, missed signals)",
-      },
-      {
-        title: "Generate Shadow Report",
-        desc: "8-section HTML/PDF — equity curve, per-market Sharpe, attribution waterfall",
-        prompt: "Render the shadow report and give me the URL — lead with the you-vs-shadow delta",
+        title: "按问题摘录",
+        desc: "回答时标出网页里的依据",
+        prompt: "读取我给出的网页，只回答我问的问题，并引用对应段落",
       },
     ],
   },
 ];
 
-const CAPABILITY_CHIPS = [
-  "70 个金融技能",
-  "29 个 Swarm 预设",
-  "32 个 Agent 工具",
-  "3 大市场：A 股 · 加密 · 港美股",
-  "Trading Connector Profiles",
-  "分钟到日线级别",
-  "4 种组合优化器",
-  "15+ 风险指标",
-  "期权与衍生品",
-  "PDF 与网页研究",
-  "因子分析与机器学习",
-  "交易日志分析",
-  "影子账户回测",
-  "持久记忆",
-  "会话搜索",
-];
+const CAPABILITY_CHIPS = ["文档阅读", "网页阅读", "会话问答", "后续可接飞书文档 MCP"];
 
 interface Props {
   onExample: (s: string) => void;
@@ -180,12 +65,9 @@ export function WelcomeScreen({ onExample }: Props) {
           <Bot className="h-8 w-8 text-white" />
         </div>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Vibe-Trading</h2>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
-            你的专业金融 Agent 团队
-          </p>
+          <h2 className="text-2xl font-bold tracking-tight">文档问答</h2>
           <p className="text-sm text-muted-foreground mt-2 max-w-md leading-relaxed mx-auto">
-            Describe a trading strategy to get started.
+            上传文档或给出网页链接，直接提问。
           </p>
         </div>
       </div>
@@ -202,11 +84,11 @@ export function WelcomeScreen({ onExample }: Props) {
       </div>
 
       <div className="w-full max-w-2xl text-left space-y-4">
-        <p className="text-xs text-muted-foreground px-1">Try an example:</p>
+        <p className="text-xs text-muted-foreground px-1">试一个例子：</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CATEGORIES.map((cat) => (
             <div key={cat.label} className="space-y-2">
-              <div className={`flex items-center gap-1.5 text-xs font-medium px-1 ${cat.color.split(" ").filter(c => c.startsWith("text-")).join(" ")}`}>
+              <div className={`flex items-center gap-1.5 text-xs font-medium px-1 ${cat.color.split(" ").filter((c) => c.startsWith("text-")).join(" ")}`}>
                 {cat.icon}
                 <span>{cat.label}</span>
               </div>

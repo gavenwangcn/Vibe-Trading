@@ -1,8 +1,7 @@
 import { Suspense, lazy, type ComponentType } from "react";
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import { Layout } from "@/components/layout/Layout";
 
-const Home = lazy(() => import("@/pages/Home").then((m) => ({ default: m.Home })));
 const Agent = lazy(() => import("@/pages/Agent").then((m) => ({ default: m.Agent })));
 const RunDetail = lazy(() =>
   import("@/pages/RunDetail").then((m) => ({ default: m.RunDetail })),
@@ -13,14 +12,8 @@ const Compare = lazy(() =>
 const Settings = lazy(() =>
   import("@/pages/Settings").then((m) => ({ default: m.Settings })),
 );
-const Correlation = lazy(() =>
-  import("@/pages/Correlation").then((m) => ({ default: m.Correlation })),
-);
 const McpSettings = lazy(() =>
   import("@/pages/McpSettings").then((m) => ({ default: m.McpSettings })),
-);
-const AlphaZoo = lazy(() =>
-  import("@/pages/AlphaZoo").then((m) => ({ default: m.AlphaZoo })),
 );
 
 function PageLoader() {
@@ -43,16 +36,12 @@ export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: "/", element: wrap(Home) },
+      { path: "/", element: <Navigate to="/agent" replace /> },
       { path: "/agent", element: wrap(Agent) },
       { path: "/settings", element: wrap(Settings) },
       { path: "/runs/:runId", element: wrap(RunDetail) },
       { path: "/compare", element: wrap(Compare) },
-      { path: "/correlation", element: wrap(Correlation) },
       { path: "/mcp", element: wrap(McpSettings) },
-      { path: "/alpha-zoo", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/bench", element: wrap(AlphaZoo) },
-      { path: "/alpha-zoo/:alphaId", element: wrap(AlphaZoo) },
     ],
   },
 ]);
