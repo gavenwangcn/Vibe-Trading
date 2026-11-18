@@ -105,6 +105,9 @@ async def list_mcp_servers() -> List[McpServerPublic]:
 async def upsert_mcp_server(server_id: str, body: McpServerUpsert) -> McpServerPublic:
     if body.id != server_id:
         raise HTTPException(status_code=400, detail="id in path must match body.id")
+    blocked = store.financial_mcp_block_reason(server_id, str(body.url or ""))
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     try:
         _, cfg = store.normalize_server_entry(body.model_dump())
     except ValueError as exc:
@@ -148,6 +151,9 @@ async def put_server_raw(server_id: str, body: Dict[str, Any] = Body(...)) -> Mc
         raise HTTPException(status_code=400, detail="id in JSON must match URL server_id")
     cfg = dict(body)
     cfg.pop("id", None)
+    blocked = store.financial_mcp_block_reason(server_id, str(cfg.get("url") or ""))
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     store.set_server(server_id, cfg)
     return _to_public(server_id, store.get_servers()[server_id])
 
@@ -162,6 +168,9 @@ async def get_server_tools(
     cfg = servers.get(server_id)
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=404, detail="Server not found")
+    blocked = store.financial_mcp_block_reason(server_id, str(cfg.get("url") or ""))
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     source = "cache"
     tools: List[Dict[str, Any]] = []
     err: Optional[str] = None
@@ -212,6 +221,9 @@ async def test_mcp_server(server_id: str) -> Dict[str, Any]:
     cfg = servers.get(server_id)
     if not isinstance(cfg, dict):
         raise HTTPException(status_code=404, detail="Server not found")
+    blocked = store.financial_mcp_block_reason(server_id, str(cfg.get("url") or ""))
+    if blocked:
+        raise HTTPException(status_code=400, detail=blocked)
     logger.info("MCP API test server_id=%s", server_id)
     ok, tools, err = await _list_tools_in_thread(server_id, cfg)
     cfg = dict(cfg)
@@ -263,6 +275,11 @@ async def import_mcp_json(body: ImportBody) -> Dict[str, Any]:
             continue
         merged = dict(entry)
         merged["id"] = str(sid)
+        blocked = store.financial_mcp_block_reason(str(sid), str(merged.get("url") or ""))
+        if blocked:
+            skipped.append({"id": str(sid), "reason": blocked})
+            logger.info("MCP import skip %s: %s", sid, blocked)
+            continue
         try:
             _, cfg = store.normalize_server_entry(merged)
         except ValueError as exc:

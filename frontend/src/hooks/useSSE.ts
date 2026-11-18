@@ -76,6 +76,7 @@ export function useSSE(config?: SSEConfig) {
     source.onopen = () => {
       retryCountRef.current = 0;
       setStatus("connected");
+      console.info("[vibe] sse open");
     };
 
     // Only subscribe to event types the backend actually emits
@@ -114,6 +115,7 @@ export function useSSE(config?: SSEConfig) {
 
     source.onerror = () => {
       if (closedRef.current) return;
+      console.info("[vibe] sse error, reconnecting");
       source.close();
       sourceRef.current = null;
       scheduleReconnect();

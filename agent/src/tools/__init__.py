@@ -166,6 +166,15 @@ def build_registry(
 
         for server_name, server_config in agent_config.mcp_servers.items():
             try:
+                from src.mcp_integration.store import financial_mcp_block_reason
+
+                server_url = str(getattr(server_config, "url", "") or "")
+                blocked = financial_mcp_block_reason(server_name, server_url)
+                if blocked:
+                    logger.info("Skipped MCP server '%s': %s", server_name, blocked)
+                    if warn_callback is not None:
+                        warn_callback(f"MCP server '{server_name}' skipped: {blocked}")
+                    continue
                 wrappers = build_mcp_tool_wrappers(
                     server_name,
                     server_config,

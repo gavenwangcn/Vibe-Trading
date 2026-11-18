@@ -45,12 +45,11 @@ class _ScriptedLLM:
         return self._responses.pop(0)
 
 
-def test_bundled_skills_keep_document_web_and_the_rest(tmp_path: Path) -> None:
+def test_bundled_skills_are_document_and_web_only(tmp_path: Path) -> None:
     skills_dir = Path(__file__).resolve().parents[1] / "src" / "skills"
     loader = SkillsLoader(skills_dir=skills_dir, user_skills_dir=tmp_path / "user-skills")
     names = {skill.name for skill in loader.skills}
-    assert {"doc-reader", "web-reader"} <= names
-    assert len(names) > 2
+    assert names == {"doc-reader", "web-reader"}
 
 
 def test_registry_keeps_core_tools() -> None:

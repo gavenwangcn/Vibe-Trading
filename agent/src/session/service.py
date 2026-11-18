@@ -154,8 +154,9 @@ class SessionService:
         self.event_bus.emit(session_id, "attempt.created", {"attempt_id": attempt.attempt_id, "prompt": plain})
 
         logger.info(
-            "attempt queued session=%s attempt=%s shell_tools=%s",
-            session_id, attempt.attempt_id, include_shell_tools,
+            "attempt queued session=%s attempt=%s shell_tools=%s chars=%d; "
+            "HTTP ack returns now, model call waits until the tool registry returns",
+            session_id, attempt.attempt_id, include_shell_tools, len(plain or ""),
         )
         asyncio.create_task(self._run_attempt(session, attempt, include_shell_tools=include_shell_tools))
         return {"message_id": message.message_id, "attempt_id": attempt.attempt_id}

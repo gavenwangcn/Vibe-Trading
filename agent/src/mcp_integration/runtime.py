@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit, urlunsplit
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -37,12 +38,26 @@ def _params_from_cfg(cfg: Dict[str, Any]) -> StdioServerParameters:
     return StdioServerParameters(command=cmd, args=args, env=env_s if env_s else None)
 
 
+def _public_url(url: str) -> str:
+    """Host and path only. Query strings often carry access tokens."""
+    raw = (url or "").strip()
+    if not raw:
+        return "(unset)"
+    try:
+        parts = urlsplit(raw)
+    except ValueError:
+        return "(invalid-url)"
+    if not parts.netloc:
+        return "(invalid-url)"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
 def _cfg_label(cfg: Dict[str, Any], server_id: str = "") -> str:
     """Short, non-secret description for logs."""
     sid = (server_id or "").strip() or "?"
     transport = _effective_transport(cfg)
     if transport == "sse":
-        return f"{sid} transport=sse url={cfg.get('url') or ''}"
+        return f"{sid} transport=sse url={_public_url(str(cfg.get('url') or ''))}"
     cmd = str(cfg.get("command") or "").strip()
     args = cfg.get("args") or []
     if isinstance(args, list):
@@ -130,8 +145,7 @@ async def _with_mcp_session(
 ) -> Any:
     transport = _effective_transport(cfg)
     label = _cfg_label(cfg, server_id)
-    if _MCP_VERBOSE:
-        logger.info("MCP session open [%s]", label)
+    logger.info("MCP session connecting [%s]", label)
     if transport == "sse":
         from mcp.client.sse import sse_client
 
@@ -141,23 +155,34 @@ async def _with_mcp_session(
         headers = cfg.get("headers")
         hdr = headers if isinstance(headers, dict) else None
         async with sse_client(url, headers=hdr) as streams:
+            logger.info("MCP session connected [%s] next=initialize", label)
             read_s, write_s = streams
             async with ClientSession(read_s, write_s) as session:
+                logger.info("MCP session initialize start [%s]", label)
                 await session.initialize()
+                logger.info("MCP session initialize done [%s]", label)
                 return await fn(session)
 
     params = _params_from_cfg(cfg)
     if not params.command:
         raise RuntimeError("stdio transport requires non-empty command")
     async with stdio_client(params) as streams:
+        logger.info("MCP session connected [%s] next=initialize", label)
         read_s, write_s = streams
         async with ClientSession(read_s, write_s) as session:
+            logger.info("MCP session initialize start [%s]", label)
             await session.initialize()
+            logger.info("MCP session initialize done [%s]", label)
             return await fn(session)
 
 
 async def list_tools_async(cfg: Dict[str, Any], *, server_id: str = "") -> List[Dict[str, Any]]:
     async def _inner(session: ClientSession) -> List[Dict[str, Any]]:
+        logger.info(
+            "MCP tools/list waiting [%s] timeout=%.0fs",
+            _cfg_label(cfg, server_id),
+            LIST_TIMEOUT,
+        )
         res = await asyncio.wait_for(session.list_tools(), timeout=LIST_TIMEOUT)
         return _serialize_tool_list(res)
 

@@ -8,9 +8,8 @@ category: tool
 ## Purpose
 
 Converts any URL into clean Markdown text, removing ads, navigation, styling, and other distractions. Suitable for:
-- Reading API documentation (`tushare`, `OKX`, `yfinance`, and similar)
-- Reading technical articles and blogs
-- Retrieving research reports and announcements
+- Reading documentation and help pages
+- Reading articles and blogs
 - Reading GitHub README / Wiki pages
 
 ## Usage
@@ -18,7 +17,7 @@ Converts any URL into clean Markdown text, removing ads, navigation, styling, an
 **Call the `read_url` tool directly (do not use bash + requests, call the tool directly):**
 
 ```
-read_url(url="https://tushare.pro/document/2?doc_id=27")
+read_url(url="https://example.com/docs")
 ```
 
 Returns JSON:
@@ -56,12 +55,12 @@ Returns JSON:
 
 ### Read API Documentation
 ```
-read_url(url="https://tushare.pro/document/2?doc_id=27")
+read_url(url="https://example.com/docs")
 ```
 
 ### Read Technical Articles
 ```
-read_url(url="https://blog.example.com/quantitative-trading-guide")
+read_url(url="https://example.com/articles/getting-started")
 ```
 
 ### Retrieve GitHub Project Information

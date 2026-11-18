@@ -116,12 +116,23 @@ def register_mcp_tools(registry: ToolRegistry) -> Dict[str, Any]:
     """
     used_names: Set[str] = set(registry.tool_names)
     servers = store.get_servers()
+    logger.info(
+        "MCP discover start servers=%d ids=%s",
+        len(servers),
+        ",".join(sorted(servers)) or "-",
+    )
     meta: Dict[str, Any] = {"servers": [], "registered": 0, "warnings": []}
     total_registered = 0
 
     for server_id in sorted(servers.keys()):
         cfg = servers.get(server_id)
         if not isinstance(cfg, dict):
+            continue
+        blocked = store.financial_mcp_block_reason(server_id, str(cfg.get("url") or ""))
+        if blocked:
+            logger.info("Skipped MCP server '%s': %s", server_id, blocked)
+            meta["warnings"].append(f"{server_id}: {blocked}")
+            meta["servers"].append({"id": server_id, "ok": False, "count": 0, "error": blocked})
             continue
         ok, tool_list, err = _load_tools_for_server(server_id, cfg)
         sinfo: Dict[str, Any] = {"id": server_id, "ok": ok, "count": 0, "error": err}

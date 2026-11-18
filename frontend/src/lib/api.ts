@@ -44,10 +44,32 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       mergedHeaders[key] = value;
     });
   }
-  const res = await fetch(`${BASE}${path}`, {
-    ...rest,
-    headers: mergedHeaders,
-  });
+  const method = (rest.method || "GET").toUpperCase();
+  const started = performance.now();
+  console.info("[vibe] http %s %s", method, path);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...rest,
+      headers: mergedHeaders,
+    });
+  } catch (error) {
+    console.info(
+      "[vibe] http failed %s %s elapsed=%dms error=%s",
+      method,
+      path,
+      Math.round(performance.now() - started),
+      error instanceof Error ? error.message : "network",
+    );
+    throw error;
+  }
+  console.info(
+    "[vibe] http done %s %s status=%d elapsed=%dms",
+    method,
+    path,
+    res.status,
+    Math.round(performance.now() - started),
+  );
   if (!res.ok) {
     throw await errorFromResponse(res);
   }

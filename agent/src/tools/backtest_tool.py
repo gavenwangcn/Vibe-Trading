@@ -36,7 +36,7 @@ def run_backtest(run_dir: str) -> str:
         return json.dumps({"status": "error", "error": f"config.json parse error: {e}"}, ensure_ascii=False)
 
     if "source" not in config:
-        return json.dumps({"status": "error", "error": "config.json missing 'source' field (tushare/okx/yfinance)"}, ensure_ascii=False)
+        return json.dumps({"status": "error", "error": "config.json missing 'source' field"}, ensure_ascii=False)
 
     valid_sources = {"tushare", "okx", "yfinance", "akshare", "mootdx", "ccxt", "futu", "auto"}
     if config["source"] not in valid_sources:

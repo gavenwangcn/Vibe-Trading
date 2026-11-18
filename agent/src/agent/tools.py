@@ -58,7 +58,13 @@ class ToolRegistry:
         self._tools: Dict[str, BaseTool] = {}
 
     def register(self, tool: BaseTool) -> None:
-        """Register a tool."""
+        """Register a tool. Tushare MCP tools are dropped before they can be sent to the model."""
+        from src.mcp_integration.store import financial_mcp_block_reason
+
+        blocked = financial_mcp_block_reason(tool.name, tool.description)
+        if blocked:
+            logger.info("Tool %s not registered: %s", tool.name, blocked)
+            return
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Optional[BaseTool]:

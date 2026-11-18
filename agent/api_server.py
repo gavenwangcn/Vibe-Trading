@@ -2072,22 +2072,29 @@ async def session_events(
         attempt = svc.store.get_attempt(session_id, session.last_attempt_id)
         attempt_status = getattr(attempt.status, "value", attempt.status) if attempt else None
         replay_all = attempt_status == "running"
+    logger.info(
+        "sse open session=%s replay_all=%s last_event=%s",
+        session_id, replay_all, "yes" if event_id else "no",
+    )
 
     async def event_generator():
-        async for event in svc.event_bus.subscribe(
-            session_id,
-            last_event_id=event_id,
-            replay_all=replay_all,
-        ):
-            if await request.is_disconnected():
-                break
-            yield event.to_sse()
-            relayed = _mandate_proposal_frame_from_tool_result(event)
-            if relayed is not None:
-                yield relayed
-            live_action = _live_action_frame_from_tool_result(event)
-            if live_action is not None:
-                yield live_action
+        try:
+            async for event in svc.event_bus.subscribe(
+                session_id,
+                last_event_id=event_id,
+                replay_all=replay_all,
+            ):
+                if await request.is_disconnected():
+                    break
+                yield event.to_sse()
+                relayed = _mandate_proposal_frame_from_tool_result(event)
+                if relayed is not None:
+                    yield relayed
+                live_action = _live_action_frame_from_tool_result(event)
+                if live_action is not None:
+                    yield live_action
+        finally:
+            logger.info("sse closed session=%s", session_id)
 
     return StreamingResponse(
         event_generator(),

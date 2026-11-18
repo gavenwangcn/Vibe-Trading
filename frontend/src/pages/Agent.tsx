@@ -398,6 +398,7 @@ export function Agent() {
 
     const touch = () => { lastEventRef.current = Date.now(); };
 
+    console.info("[vibe] sse connect session=%s", sid);
     connect(api.sseUrl(sid, { replay: "active" }), {
       text_delta: (d) => { touch(); act().appendDelta(String(d.delta || "")); scrollToBottom(); },
       thinking_done: () => { touch(); /* don't flush 鈥?keep streaming text visible */ },
@@ -783,17 +784,20 @@ export function Agent() {
     act().setStatus("streaming");
     forceScrollToBottom();
     inputRef.current?.focus();
+    console.info("[vibe] submit chars=%d hasSession=%s", finalPrompt.length, Boolean(act().sessionId));
 
     try {
       let sid = act().sessionId;
       if (!sid) {
         const session = await api.createSession(prompt.slice(0, 50));
         sid = session.session_id;
+        console.info("[vibe] session created %s", sid);
         act().setSessionId(sid);
         setSearchParams({ session: sid }, { replace: true });
       }
       setupSSE(sid);
-      await api.sendMessage(sid, finalPrompt);
+      const sent = await api.sendMessage(sid, finalPrompt);
+      console.info("[vibe] message accepted session=%s attempt=%s; waiting for SSE answer", sid, sent.attempt_id);
     } catch {
       act().setStatus("error");
       toast.error("Failed to send message, please retry.");

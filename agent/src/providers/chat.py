@@ -6,6 +6,7 @@ ChatLLM is designed specifically for the AgentLoop ReAct cycle.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -91,8 +92,12 @@ class ChatLLM:
             self.model_name = model_name or ""
             self._llm = internal_llm
         else:
-            self.model_name = model_name
             self._llm = build_llm(model_name=model_name)
+            self.model_name = (
+                model_name
+                or os.getenv("LANGCHAIN_MODEL_NAME", "").strip()
+                or str(getattr(self._llm, "model_name", "") or getattr(self._llm, "model", "") or "")
+            )
 
     def chat(self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, timeout: Optional[int] = None) -> LLMResponse:
         """Call the LLM synchronously.

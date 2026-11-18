@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: Dict[str, Any] = {"version": 1, "mcpServers": {}}
 
@@ -44,13 +47,42 @@ def save_raw(data: Dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def financial_mcp_block_reason(server_id: str, url: str = "") -> str | None:
+    """Return a reason when this MCP server must not be saved or called.
+
+    Tushare MCP is a financial data service and is no longer part of this agent.
+    """
+    sid = (server_id or "").strip().lower()
+    loc = (url or "").strip().lower()
+    if "tushare" in sid or "tushare" in loc:
+        return "tushare MCP has been removed and is not used"
+    return None
+
+
 def get_servers() -> Dict[str, Any]:
-    """Return mcpServers map: server_id -> config dict."""
+    """Return mcpServers map: server_id -> config dict.
+
+    Tushare entries are deleted from the file and are not returned, so they
+    are never listed, tested, or turned into agent tools.
+    """
     raw = load_raw()
     servers = raw.get("mcpServers") or {}
     if not isinstance(servers, dict):
         return {}
-    return servers
+    kept: Dict[str, Any] = {}
+    removed: list[str] = []
+    for sid, cfg in servers.items():
+        url = str(cfg.get("url") or "") if isinstance(cfg, dict) else ""
+        if financial_mcp_block_reason(str(sid), url):
+            removed.append(str(sid))
+            continue
+        kept[sid] = cfg
+    if removed:
+        raw = dict(raw)
+        raw["mcpServers"] = kept
+        save_raw(raw)
+        logger.info("Removed unused MCP servers: %s", ",".join(removed))
+    return kept
 
 
 def set_server(server_id: str, cfg: Dict[str, Any]) -> None:
