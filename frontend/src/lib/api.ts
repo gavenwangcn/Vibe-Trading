@@ -63,18 +63,33 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     );
     throw error;
   }
-  console.info(
-    "[vibe] http done %s %s status=%d elapsed=%dms",
-    method,
-    path,
-    res.status,
-    Math.round(performance.now() - started),
-  );
+  const elapsed = Math.round(performance.now() - started);
   if (!res.ok) {
-    throw await errorFromResponse(res);
+    const error = await errorFromResponse(res);
+    console.info(
+      "[vibe] http error %s %s status=%d elapsed=%dms detail=%s",
+      method,
+      path,
+      res.status,
+      elapsed,
+      error.message,
+    );
+    throw error;
   }
+  console.info("[vibe] http done %s %s status=%d elapsed=%dms", method, path, res.status, elapsed);
   const text = await res.text();
-  return text ? JSON.parse(text) : ({} as T);
+  try {
+    return text ? JSON.parse(text) : ({} as T);
+  } catch (error) {
+    console.info(
+      "[vibe] http bad json %s %s elapsed=%dms error=%s",
+      method,
+      path,
+      elapsed,
+      error instanceof Error ? error.message : "parse",
+    );
+    throw error;
+  }
 }
 
 export interface UploadResult {
@@ -86,10 +101,26 @@ export interface UploadResult {
 async function uploadFile(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form });
-  if (!res.ok) {
-    throw await errorFromResponse(res);
+  const started = performance.now();
+  console.info("[vibe] http POST /upload name=%s bytes=%d", file.name, file.size);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/upload`, { method: "POST", headers: authHeaders(), body: form });
+  } catch (error) {
+    console.info(
+      "[vibe] http failed POST /upload elapsed=%dms error=%s",
+      Math.round(performance.now() - started),
+      error instanceof Error ? error.message : "network",
+    );
+    throw error;
   }
+  const elapsed = Math.round(performance.now() - started);
+  if (!res.ok) {
+    const error = await errorFromResponse(res);
+    console.info("[vibe] http error POST /upload status=%d elapsed=%dms detail=%s", res.status, elapsed, error.message);
+    throw error;
+  }
+  console.info("[vibe] http done POST /upload status=%d elapsed=%dms", res.status, elapsed);
   return res.json();
 }
 

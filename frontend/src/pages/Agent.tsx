@@ -330,8 +330,10 @@ export function Agent() {
   }, []);
 
   const loadSessionMessages = useCallback(async (sid: string, gen: number) => {
+    console.info("[vibe] load messages session=%s", sid);
     try {
       const msgs = await api.getSessionMessages(sid);
+      console.info("[vibe] load messages done session=%s count=%d", sid, msgs.length);
       if (genRef.current !== gen) return;
       const agentMsgs: AgentMessage[] = [];
       for (const m of msgs) {
@@ -386,7 +388,12 @@ export function Agent() {
       act().setSessionLoading(false);
       act().cacheSession(sid, agentMsgs);
       setTimeout(() => forceScrollToBottom(), 50);
-    } catch {
+    } catch (error) {
+      console.info(
+        "[vibe] load messages failed session=%s error=%s",
+        sid,
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      );
       act().setSessionLoading(false);
     }
   }, [forceScrollToBottom]);
@@ -798,7 +805,12 @@ export function Agent() {
       setupSSE(sid);
       const sent = await api.sendMessage(sid, finalPrompt);
       console.info("[vibe] message accepted session=%s attempt=%s; waiting for SSE answer", sid, sent.attempt_id);
-    } catch {
+    } catch (error) {
+      console.info(
+        "[vibe] submit failed session=%s error=%s",
+        act().sessionId || "-",
+        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      );
       act().setStatus("error");
       toast.error("Failed to send message, please retry.");
       act().addMessage({ id: "", type: "error", content: "Failed to send message, please retry.", timestamp: Date.now() });

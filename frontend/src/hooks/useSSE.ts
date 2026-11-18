@@ -72,6 +72,7 @@ export function useSSE(config?: SSEConfig) {
     const url = buildUrl(urlRef.current);
     const source = new EventSource(url);
     sourceRef.current = source;
+    console.info("[vibe] sse connecting %s", url.replace(/api_key=[^&]+/, "api_key=***"));
 
     source.onopen = () => {
       retryCountRef.current = 0;
@@ -106,6 +107,17 @@ export function useSSE(config?: SSEConfig) {
       }
 
       const handler = handlersRef.current[eventType] ?? handlersRef.current["message"];
+      if (eventType !== "heartbeat") {
+        const hint =
+          eventType === "text_delta"
+            ? `chars=${String(parsed.delta ?? "").length}`
+            : eventType === "tool_call" || eventType === "tool_result"
+              ? `tool=${String(parsed.tool ?? "")}`
+              : eventType.startsWith("attempt.")
+                ? `status=${String(parsed.status ?? parsed.attempt_id ?? "")}`
+                : "";
+        console.info("[vibe] sse event %s %s", eventType, hint);
+      }
       handler?.(parsed);
     };
 
@@ -115,7 +127,7 @@ export function useSSE(config?: SSEConfig) {
 
     source.onerror = () => {
       if (closedRef.current) return;
-      console.info("[vibe] sse error, reconnecting");
+      console.info("[vibe] sse error readyState=%d reconnecting", source.readyState);
       source.close();
       sourceRef.current = null;
       scheduleReconnect();
