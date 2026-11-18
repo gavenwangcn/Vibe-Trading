@@ -541,6 +541,29 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_http_request(request: Request, call_next):
+    """Log each API request except the health probe."""
+    path = request.url.path
+    if path == "/health":
+        return await call_next(request)
+    started = time.perf_counter()
+    logger.info("http start %s %s", request.method, path)
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("http failed %s %s", request.method, path)
+        raise
+    logger.info(
+        "http done %s %s status=%s elapsed=%.3fs",
+        request.method,
+        path,
+        response.status_code,
+        time.perf_counter() - started,
+    )
+    return response
+
+
 # ----------------------------------------------------------------------------
 # SPA deep-link fallback
 # ----------------------------------------------------------------------------
@@ -1679,6 +1702,7 @@ def _get_existing_session_or_404(session_id: str):
 @app.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_auth)])
 async def create_session(request: CreateSessionRequest):
     """Create a chat session."""
+    logger.info("create_session title_chars=%d", len(request.title or ""))
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -1972,6 +1996,9 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
 async def send_message(session_id: str, payload: SendMessageRequest, http_request: Request):
     """Send a user message and start the agent loop (natural language strategy)."""
     _validate_path_param(session_id, "session_id")
+    content = payload.content
+    content_chars = len(content) if isinstance(content, str) else len(content or [])
+    logger.info("send_message http session=%s chars=%d", session_id, content_chars)
     svc = _get_session_service()
     if not svc:
         raise HTTPException(status_code=501, detail="Session runtime not enabled")
@@ -2786,6 +2813,14 @@ def serve_main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         return int(exc.code) if isinstance(exc.code, int) else 2
 
+    logging.basicConfig(
+        level=os.getenv("VIBE_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        stream=_sys.stderr,
+    )
+    print(f"[serve] starting host={args.host} port={args.port} dev={args.dev}", flush=True)
+    logger.info("serve starting host=%s port=%s dev=%s", args.host, args.port, args.dev)
+
     frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
     frontend_root = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -2855,11 +2890,12 @@ def _serve_log_config() -> dict:
         "stream": "ext://sys.stderr",
     }
     config.setdefault("loggers", {})
-    config["loggers"]["src"] = {
-        "handlers": ["agent"],
-        "level": level,
-        "propagate": False,
-    }
+    for name in ("src", "cli", "api_server"):
+        config["loggers"][name] = {
+            "handlers": ["agent"],
+            "level": level,
+            "propagate": False,
+        }
     return config
 
 

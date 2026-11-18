@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import logging
 import os
 import re
 import shutil
@@ -36,6 +37,8 @@ for _s in ("stdout", "stderr"):
     _r = getattr(getattr(sys, _s, None), "reconfigure", None)
     if callable(_r):
         _r(encoding="utf-8", errors="replace")
+
+logger = logging.getLogger("cli.legacy")
 
 from rich import box
 from rich.columns import Columns
@@ -3138,14 +3141,6 @@ def _build_parser() -> argparse.ArgumentParser:
         p = connector_subparsers.add_parser(name, help=help_text)
         _add_connector_profile_arg(p)
 
-    # Alpha Zoo subcommands (registered via cli_handlers.add_subparser)
-    from src.factors.cli_handlers import add_subparser as _add_alpha_subparser
-    _add_alpha_subparser(subparsers)
-
-    # Hypothesis Registry subcommands
-    from src.hypotheses.cli_handlers import add_subparser as _add_hypothesis_subparser
-    _add_hypothesis_subparser(subparsers)
-
     return parser
 
 
@@ -3603,9 +3598,15 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(args, "run_no_rich"):
             args.run_no_rich = True
 
+    command = getattr(args, "command", None)
+    print(f"[cli] parsed command={command or 'interactive'}", flush=True)
+    logger.info("cli parsed command=%s", command or "interactive")
+
     if args.command == "init":
         return cmd_init()
     if args.command == "serve":
+        print(f"[cli] starting API server argv={raw_argv[1:]}", flush=True)
+        logger.info("cli starting API server argv=%s", raw_argv[1:])
         return serve_main(raw_argv[1:])
     if args.command == "provider":
         if args.provider_command == "login":
@@ -3626,12 +3627,9 @@ def main(argv: list[str] | None = None) -> int:
         return _coerce_exit_code(cmd_show(args.show))
     if args.command == "chat":
         return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
-    if args.command == "alpha":
-        from src.factors.cli_handlers import dispatch as _alpha_dispatch
-        return _coerce_exit_code(_alpha_dispatch(args))
-    if args.command == "hypothesis":
-        from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
-        return _coerce_exit_code(_hyp_dispatch(args))
+    if args.command in {"alpha", "hypothesis"}:
+        console.print("[red]This command has been removed.[/red]")
+        return EXIT_USAGE_ERROR
     if args.command == "connector":
         return _coerce_exit_code(_dispatch_connector(args))
     if args.command == "memory":

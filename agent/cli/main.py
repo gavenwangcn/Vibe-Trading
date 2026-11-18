@@ -20,6 +20,7 @@ hits :func:`main`.
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import sys
 import threading
@@ -31,6 +32,8 @@ from typing import Any, Dict, List, Optional, Sequence
 from cli.intro import print_banner
 from cli.onboard import run_onboarding
 from cli.theme import Theme, get_console
+
+logger = logging.getLogger("cli")
 
 
 def _register_live_slash_commands() -> None:
@@ -1162,9 +1165,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         return _interactive_loop(max_iter)
 
     # Delegate every other path to the legacy dispatcher.
+    print(f"[cli] dispatch argv={raw_argv}", flush=True)
+    logger.info("cli dispatch argv=%s", raw_argv)
     try:
         from cli import _legacy
     except ImportError as exc:  # pragma: no cover — packaging error
+        print(f"[cli] cannot import cli._legacy: {exc}", flush=True)
         get_console().print(
             f"  Internal error: cannot import cli._legacy ({exc}).",
             style=Theme.danger,
