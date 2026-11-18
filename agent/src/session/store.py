@@ -13,6 +13,11 @@ from src.session.models import Attempt, Message, Session
 logger = logging.getLogger(__name__)
 
 
+def _is_removed_demo_title(title: str) -> bool:
+    """Finance demo sessions are no longer part of the document agent."""
+    return "风险平价" in (title or "")
+
+
 class SessionStore:
     """Filesystem-backed persistent storage.
 
@@ -132,8 +137,14 @@ class SessionStore:
                 continue
             session_file = session_dir / "session.json"
             data = self._read_json(session_file)
-            if data:
-                sessions.append(Session.from_dict(data))
+            if not data:
+                continue
+            session = Session.from_dict(data)
+            if _is_removed_demo_title(session.title):
+                logger.info("removed demo session id=%s", session.session_id)
+                self.delete_session(session.session_id)
+                continue
+            sessions.append(session)
         sessions.sort(key=lambda s: s.updated_at, reverse=True)
         return sessions[:limit]
 
