@@ -24,6 +24,7 @@ WORKDIR /app
 
 # Pip: avoid ReadTimeoutError on slow links to PyPI (e.g. large wheels from files.pythonhosted.org)
 ENV PIP_DEFAULT_TIMEOUT=300
+ENV PYTHONUNBUFFERED=1
 
 # System deps (+ gosu for dropping root in entrypoint)
 RUN apt-get update && apt-get install -y --no-install-recommends \

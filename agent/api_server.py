@@ -545,7 +545,7 @@ app.add_middleware(
 async def log_http_request(request: Request, call_next):
     """Log each API request except the health probe."""
     path = request.url.path
-    if path == "/health":
+    if path == "/health" or path.startswith("/assets/") or path == "/favicon.ico":
         return await call_next(request)
     started = time.perf_counter()
     logger.info("http start %s %s", request.method, path)

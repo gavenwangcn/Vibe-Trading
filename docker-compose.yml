@@ -8,6 +8,8 @@ services:
     env_file:
       - path: agent/.env
         required: false
+    environment:
+      PYTHONUNBUFFERED: "1"
     volumes:
       - vibe-runs:/app/agent/runs
       - vibe-sessions:/app/agent/sessions
