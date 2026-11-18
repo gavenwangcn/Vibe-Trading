@@ -2973,7 +2973,180 @@ def _dispatch_connector(args: argparse.Namespace) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser with subcommands and compatibility flags."""
-    return None
+    parser = argparse.ArgumentParser(description="Vibe-Trading CLI")
+    parser.add_argument("--version", action="version", version=f"vibe-trading {_VERSION}")
+    parser.add_argument("-p", "--prompt", type=str, help="Prompt text")
+    parser.add_argument("-f", "--prompt-file", type=Path, help="Read prompt text from a file")
+    parser.add_argument("--json", action="store_true", help="Print machine-readable JSON output")
+    parser.add_argument("--no-rich", action="store_true", help="Disable Rich formatting")
+    parser.add_argument("--chat", action="store_true", help="Interactive chat mode")
+    parser.add_argument("--continue", dest="cont", nargs=2, metavar=("RUN_ID", "PROMPT"), help="Continue a run")
+    parser.add_argument("--list", action="store_true", help="List runs")
+    parser.add_argument("--show", metavar="RUN_ID", help="Show run details")
+    parser.add_argument("--code", metavar="RUN_ID", help="Show generated code")
+    parser.add_argument("--pine", metavar="RUN_ID", help="Show Pine Script for TradingView")
+    parser.add_argument("--trace", metavar="RUN_ID", help="Replay a run trace")
+    parser.add_argument("--skills", action="store_true", help="List skills")
+    parser.add_argument("--max-iter", type=int, default=50, help="Maximum agent iterations")
+
+    parser.add_argument("--swarm-presets", action="store_true", help="List swarm presets")
+    parser.add_argument("--swarm-inspect", metavar="PRESET", help="Inspect a swarm preset without running it")
+    parser.add_argument("--swarm-run", nargs="+", metavar=("PRESET", "VARS"), help="Run a swarm preset")
+    parser.add_argument("--swarm-list", action="store_true", help="List swarm runs")
+    parser.add_argument("--swarm-show", metavar="RUN_ID", help="Show a swarm run")
+    parser.add_argument("--swarm-cancel", metavar="RUN_ID", help="Cancel a swarm run")
+
+    parser.add_argument("--sessions", action="store_true", help="List sessions")
+    parser.add_argument("--session-chat", metavar="SESSION_ID", help="Continue a session chat")
+    parser.add_argument("--upload", metavar="FILE_PATH", help="Upload a file")
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_parser = subparsers.add_parser("run", help="Run a prompt")
+    run_parser.add_argument("-p", "--prompt", dest="run_prompt", type=str, help="Prompt text")
+    run_parser.add_argument("-f", "--prompt-file", dest="run_prompt_file", type=Path, help="Read prompt text from a file")
+    run_parser.add_argument("--json", dest="run_json", action="store_true", help="Print machine-readable JSON output")
+    run_parser.add_argument("--no-rich", dest="run_no_rich", action="store_true", help="Disable Rich formatting")
+    run_parser.add_argument("--max-iter", dest="run_max_iter", type=int, default=50, help="Maximum agent iterations")
+
+    serve_parser = subparsers.add_parser("serve", help="Start the API server")
+    serve_parser.add_argument("--host", default="0.0.0.0", help="Bind address")
+    serve_parser.add_argument("--port", type=int, default=8000, help="Listen port")
+    serve_parser.add_argument("--dev", action="store_true", help="Start the Vite dev server")
+
+    provider_parser = subparsers.add_parser("provider", help="Manage OAuth providers")
+    provider_subparsers = provider_parser.add_subparsers(dest="provider_command")
+    login_parser = provider_subparsers.add_parser("login", help="Authenticate with an OAuth provider")
+    login_parser.add_argument("provider", help="OAuth provider name, e.g. openai-codex")
+
+    list_parser = subparsers.add_parser("list", help="List runs")
+    list_parser.add_argument("--limit", dest="list_limit", type=int, default=20, help="Maximum number of runs")
+
+    show_parser = subparsers.add_parser("show", help="Show run details")
+    show_parser.add_argument("run_id", help="Run identifier")
+
+    chat_parser = subparsers.add_parser("chat", help="Interactive chat mode")
+    chat_parser.add_argument("--max-iter", dest="chat_max_iter", type=int, default=50, help="Maximum agent iterations")
+
+    subparsers.add_parser("init", help="Interactive setup: create ~/.vibe-trading/.env")
+
+    memory_parser = subparsers.add_parser("memory", help="Inspect persistent memory")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
+
+    memory_list_parser = memory_subparsers.add_parser("list", help="List memory entries")
+    memory_list_parser.add_argument(
+        "--type",
+        dest="memory_type",
+        choices=MEMORY_TYPES,
+        help="Filter by memory type",
+    )
+
+    memory_show_parser = memory_subparsers.add_parser("show", help="Show a memory entry")
+    memory_show_parser.add_argument("name", help="Memory title or filename stem")
+
+    memory_search_parser = memory_subparsers.add_parser("search", help="Recall memories for a query")
+    memory_search_parser.add_argument("query", help="Search text")
+    memory_search_parser.add_argument(
+        "--limit", dest="memory_limit", type=int, default=5, help="Maximum matches (default: 5)"
+    )
+
+    memory_forget_parser = memory_subparsers.add_parser("forget", help="Remove a memory entry")
+    memory_forget_parser.add_argument("name", help="Memory title or filename stem")
+    memory_forget_parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
+
+    connector_parser = subparsers.add_parser("connector", help="Manage trading connector profiles")
+    connector_subparsers = connector_parser.add_subparsers(dest="connector_command")
+
+    connector_subparsers.add_parser("list", help="List selectable connector profiles")
+
+    connector_use = connector_subparsers.add_parser("use", help="Select the default connector profile")
+    connector_use.add_argument("profile", help="Profile id, e.g. ibkr-paper-local")
+
+    def _add_connector_profile_arg(p: argparse.ArgumentParser, *, required: bool = False) -> None:
+        if required:
+            p.add_argument("profile", help="Connector profile id")
+        else:
+            p.add_argument("profile", nargs="?", default=None, help="Connector profile id (default: selected)")
+
+    def _add_connector_local(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--host", default=None)
+        p.add_argument("--port", type=int, default=None)
+        p.add_argument("--client-id", dest="client_id", type=int, default=None)
+        p.add_argument("--account", default=None, help="Optional account code")
+
+    def _add_connector_contract(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--exchange", default="SMART")
+        p.add_argument("--currency", default="USD")
+        p.add_argument("--sec-type", dest="sec_type", default="STK")
+
+    connector_configure = connector_subparsers.add_parser("configure", help="Configure a local connector profile")
+    _add_connector_profile_arg(connector_configure, required=True)
+    connector_configure.add_argument("--host", default="127.0.0.1")
+    connector_configure.add_argument("--port", type=int, default=None)
+    connector_configure.add_argument("--client-id", dest="client_id", type=int, default=77)
+    connector_configure.add_argument("--account", default=None)
+    connector_configure.add_argument("-y", "--yes", action="store_true", help="Overwrite without prompting")
+
+    connector_check = connector_subparsers.add_parser("check", help="Check selected connector readiness")
+    _add_connector_profile_arg(connector_check)
+    _add_connector_local(connector_check)
+
+    connector_status = connector_subparsers.add_parser("status", help="Show selected connector status")
+    _add_connector_profile_arg(connector_status)
+
+    connector_authorize = connector_subparsers.add_parser("authorize", help="Authorize a remote MCP connector profile")
+    _add_connector_profile_arg(connector_authorize)
+
+    connector_account = connector_subparsers.add_parser("account", help="Read account summary")
+    _add_connector_profile_arg(connector_account)
+    _add_connector_local(connector_account)
+
+    connector_positions = connector_subparsers.add_parser("positions", help="Read current positions")
+    _add_connector_profile_arg(connector_positions)
+    _add_connector_local(connector_positions)
+
+    connector_orders = connector_subparsers.add_parser("orders", help="Read open orders")
+    _add_connector_profile_arg(connector_orders)
+    _add_connector_local(connector_orders)
+    connector_orders.add_argument("--include-executions", action="store_true")
+
+    connector_quote = connector_subparsers.add_parser("quote", help="Read a quote snapshot")
+    connector_quote.add_argument("symbol")
+    _add_connector_profile_arg(connector_quote)
+    _add_connector_local(connector_quote)
+    _add_connector_contract(connector_quote)
+
+    connector_history = connector_subparsers.add_parser("history", help="Read historical bars")
+    connector_history.add_argument("symbol")
+    _add_connector_profile_arg(connector_history)
+    _add_connector_local(connector_history)
+    _add_connector_contract(connector_history)
+    connector_history.add_argument("--duration", default="30 D", help="IBKR (local_tws) duration string")
+    connector_history.add_argument("--bar-size", dest="bar_size", default="1 day", help="IBKR (local_tws) bar size")
+    connector_history.add_argument("--what-to-show", dest="what_to_show", default="TRADES")
+    connector_history.add_argument("--no-rth", action="store_true", help="Include outside-regular-hours data when available")
+    connector_history.add_argument("--period", default="1d", help="Bar interval for SDK connectors: 1m/5m/15m/30m/1h/4h/1d/1w/1M")
+    connector_history.add_argument("--limit", dest="bar_limit", type=int, default=90, help="Number of bars for SDK connectors")
+
+    for name, help_text in (
+        ("start", "Start the selected live connector runner"),
+        ("stop", "Stop the selected live connector runner"),
+        ("halt", "Trip the selected live connector kill switch"),
+        ("resume", "Clear the selected live connector kill switch"),
+        ("revoke", "Revoke the selected live connector OAuth token and mandate"),
+    ):
+        p = connector_subparsers.add_parser(name, help=help_text)
+        _add_connector_profile_arg(p)
+
+    # Alpha Zoo subcommands (registered via cli_handlers.add_subparser)
+    from src.factors.cli_handlers import add_subparser as _add_alpha_subparser
+    _add_alpha_subparser(subparsers)
+
+    # Hypothesis Registry subcommands
+    from src.hypotheses.cli_handlers import add_subparser as _add_hypothesis_subparser
+    _add_hypothesis_subparser(subparsers)
+
+    return parser
 
 
 def _handle_prompt_command(
@@ -3419,7 +3592,111 @@ def cmd_init() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint returning a process exit code."""
-    return 2
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _build_parser()
+    try:
+        args = parser.parse_args(raw_argv)
+    except SystemExit as exc:
+        return int(exc.code) if isinstance(exc.code, int) else EXIT_USAGE_ERROR
+    if not sys.stdout.isatty():
+        args.no_rich = True
+        if hasattr(args, "run_no_rich"):
+            args.run_no_rich = True
+
+    if args.command == "init":
+        return cmd_init()
+    if args.command == "serve":
+        return serve_main(raw_argv[1:])
+    if args.command == "provider":
+        if args.provider_command == "login":
+            return cmd_provider_login(args.provider)
+        console.print("[red]provider requires a subcommand.[/red] Try: vibe-trading provider login openai-codex")
+        return EXIT_USAGE_ERROR
+    if args.command == "run":
+        return _handle_prompt_command(
+            args.run_prompt,
+            args.run_prompt_file,
+            max_iter=args.run_max_iter,
+            json_mode=args.run_json,
+            no_rich=args.run_no_rich,
+        )
+    if args.command == "list":
+        return _coerce_exit_code(cmd_list(args.list_limit))
+    if args.command == "show":
+        return _coerce_exit_code(cmd_show(args.show))
+    if args.command == "chat":
+        return _coerce_exit_code(cmd_interactive(args.chat_max_iter))
+    if args.command == "alpha":
+        from src.factors.cli_handlers import dispatch as _alpha_dispatch
+        return _coerce_exit_code(_alpha_dispatch(args))
+    if args.command == "hypothesis":
+        from src.hypotheses.cli_handlers import dispatch as _hyp_dispatch
+        return _coerce_exit_code(_hyp_dispatch(args))
+    if args.command == "connector":
+        return _coerce_exit_code(_dispatch_connector(args))
+    if args.command == "memory":
+        if args.memory_command == "list":
+            return _coerce_exit_code(cmd_memory_list(args.memory_type))
+        if args.memory_command == "show":
+            return _coerce_exit_code(cmd_memory_show(args.name))
+        if args.memory_command == "search":
+            return _coerce_exit_code(cmd_memory_search(args.query, args.memory_limit))
+        if args.memory_command == "forget":
+            return _coerce_exit_code(cmd_memory_forget(args.name, yes=args.yes))
+        console.print("[red]memory requires a subcommand.[/red] Try: vibe-trading memory list")
+        return EXIT_USAGE_ERROR
+
+    if args.list:
+        return _coerce_exit_code(cmd_list())
+    if args.show:
+        return _coerce_exit_code(cmd_show(args.show))
+    if args.code:
+        return _coerce_exit_code(cmd_code(args.code))
+    if args.pine:
+        return _coerce_exit_code(cmd_pine(args.pine))
+    if args.trace:
+        return _coerce_exit_code(cmd_trace(args.trace))
+    if args.skills:
+        return _coerce_exit_code(cmd_skills())
+
+    if args.swarm_presets:
+        return _coerce_exit_code(cmd_swarm_presets())
+    if args.swarm_inspect:
+        return _coerce_exit_code(cmd_swarm_inspect(args.swarm_inspect))
+    if args.swarm_run:
+        preset_name = args.swarm_run[0]
+        vars_json = args.swarm_run[1] if len(args.swarm_run) > 1 else None
+        return _coerce_exit_code(cmd_swarm_run_live(preset_name, vars_json))
+    if args.swarm_list:
+        return _coerce_exit_code(cmd_swarm_list())
+    if args.swarm_show:
+        return _coerce_exit_code(cmd_swarm_show(args.swarm_show))
+    if args.swarm_cancel:
+        return _coerce_exit_code(cmd_swarm_cancel(args.swarm_cancel))
+
+    if args.sessions:
+        return _coerce_exit_code(cmd_sessions())
+    if args.session_chat:
+        return _coerce_exit_code(cmd_session_chat(args.session_chat, args.max_iter))
+    if args.upload:
+        return _coerce_exit_code(cmd_upload(args.upload))
+    if args.chat:
+        return _coerce_exit_code(cmd_interactive(args.max_iter))
+    if args.cont:
+        return _coerce_exit_code(cmd_continue(args.cont[0], args.cont[1], args.max_iter, json_mode=args.json, no_rich=args.no_rich))
+
+    # No flags and no subcommand: check for a prompt, otherwise enter interactive mode.
+    if args.prompt or args.prompt_file or not sys.stdin.isatty():
+        return _handle_prompt_command(
+            args.prompt,
+            args.prompt_file,
+            max_iter=args.max_iter,
+            json_mode=args.json,
+            no_rich=args.no_rich,
+        )
+
+    # Default: interactive mode
+    return _coerce_exit_code(cmd_interactive(args.max_iter))
 
 
 if __name__ == "__main__":
